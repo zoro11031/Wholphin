@@ -28,15 +28,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -178,9 +178,10 @@ private fun VoiceSearchOverlay(
 
     // Cache Stroke object to avoid allocation on every frame
     val density = LocalDensity.current
-    val rippleStroke = remember(density) {
-        Stroke(width = with(density) { 2.dp.toPx() })
-    }
+    val rippleStroke =
+        remember(density) {
+            Stroke(width = with(density) { 2.dp.toPx() })
+        }
 
     // Smooth transitions between sound level changes
     val animatedSoundLevel by animateFloatAsState(
@@ -287,8 +288,7 @@ private fun VoiceSearchOverlay(
                                 .graphicsLayer {
                                     scaleX = bubbleScale
                                     scaleY = bubbleScale
-                                }
-                                .clip(CircleShape)
+                                }.clip(CircleShape)
                                 .background(primaryColor),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -304,25 +304,28 @@ private fun VoiceSearchOverlay(
                 // Determine status text and accessibility description
                 val processingText = stringResource(R.string.processing)
                 val listeningText = stringResource(R.string.voice_search_prompt)
-                val statusText = when {
-                    partialResult.isNotBlank() -> partialResult
-                    isProcessing -> processingText + ".".repeat(dotAnimation.toInt())
-                    else -> listeningText + ".".repeat(dotAnimation.toInt())
-                }
+                val statusText =
+                    when {
+                        partialResult.isNotBlank() -> partialResult
+                        isProcessing -> processingText + ".".repeat(dotAnimation.toInt())
+                        else -> listeningText + ".".repeat(dotAnimation.toInt())
+                    }
                 // Accessibility description without animated dots
-                val accessibilityDescription = when {
-                    partialResult.isNotBlank() -> partialResult
-                    isProcessing -> processingText
-                    else -> listeningText
-                }
+                val accessibilityDescription =
+                    when {
+                        partialResult.isNotBlank() -> partialResult
+                        isProcessing -> processingText
+                        else -> listeningText
+                    }
 
                 Text(
                     text = statusText,
                     style = MaterialTheme.typography.headlineMedium,
                     color = Color.White,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { contentDescription = accessibilityDescription },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = accessibilityDescription },
                 )
             }
 
