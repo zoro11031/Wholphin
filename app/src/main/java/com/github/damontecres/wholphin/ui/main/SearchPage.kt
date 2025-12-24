@@ -54,6 +54,7 @@ import com.github.damontecres.wholphin.ui.cards.ItemRow
 import com.github.damontecres.wholphin.ui.cards.SeasonCard
 import com.github.damontecres.wholphin.ui.components.SearchEditTextBox
 import com.github.damontecres.wholphin.ui.components.VoiceSearchButton
+import com.github.damontecres.wholphin.ui.components.rememberVoiceInputManager
 import com.github.damontecres.wholphin.ui.data.RowColumn
 import com.github.damontecres.wholphin.ui.ifElse
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
@@ -305,6 +306,7 @@ fun SearchPage(
                                     }
                                 },
                     )
+                    val voiceInputManager = rememberVoiceInputManager()
                     VoiceSearchButton(
                         onSpeechResult = { spokenText ->
                             query = spokenText
@@ -316,6 +318,7 @@ fun SearchPage(
                                 textFieldFocusRequester.requestFocus()
                             }
                         },
+                        voiceInputManager = voiceInputManager,
                     )
                 }
             }
