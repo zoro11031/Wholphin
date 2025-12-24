@@ -186,6 +186,9 @@ fun SearchPage(
     var pendingImmediateSearch by rememberSaveable { mutableStateOf(false) }
     var immediateSearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // Create voice input manager at top level to survive LazyColumn recompositions
+    val voiceInputManager = rememberVoiceInputManager()
+
     fun triggerImmediateSearch(searchQuery: String) {
         immediateSearchQuery = searchQuery
         pendingImmediateSearch = true
@@ -215,11 +218,19 @@ fun SearchPage(
     val tvShowsTitle = stringResource(R.string.tv_shows)
     val episodesTitle = stringResource(R.string.episodes)
 
-    // After voice search, wait for results to load before moving focus to the first result row
+    // After voice search, wait for results to load before moving focus to the first result row.
+    // Clears the flag if any search succeeded OR if all searches finished (even with errors).
     LaunchedEffect(pendingImmediateSearch, movies, collections, series, episodes) {
         if (pendingImmediateSearch) {
-            if (listOf(movies, collections, series, episodes).any { it is SearchResult.Success }) {
+            val results = listOf(movies, collections, series, episodes)
+            val hasSuccess = results.any { it is SearchResult.Success }
+            val allFinished = results.none { it is SearchResult.Searching }
+
+            if (hasSuccess) {
                 focusManager.moveFocus(FocusDirection.Next)
+                pendingImmediateSearch = false
+            } else if (allFinished) {
+                // All finished (likely all errors or empty), stop waiting
                 pendingImmediateSearch = false
             }
         }
@@ -299,14 +310,17 @@ fun SearchPage(
                                                     false
                                                 }
                                             }
-                                            else -> false
+
+                                            else -> {
+                                                false
+                                            }
                                         }
                                     } else {
                                         false
                                     }
                                 },
                     )
-                    val voiceInputManager = rememberVoiceInputManager()
+
                     VoiceSearchButton(
                         onSpeechResult = { spokenText ->
                             query = spokenText

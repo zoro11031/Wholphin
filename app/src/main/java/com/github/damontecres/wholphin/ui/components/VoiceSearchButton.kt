@@ -45,6 +45,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.github.damontecres.wholphin.R
+import kotlinx.coroutines.delay
 
 /** Material Design mic icon path data (avoids adding material-icons dependency) */
 private val MicIcon: ImageVector by lazy {
@@ -108,6 +109,14 @@ fun VoiceSearchButton(
         }
     }
 
+    // Auto-dismiss error state after a short delay
+    LaunchedEffect(state) {
+        if (state is VoiceInputState.Error) {
+            delay(3000)
+            voiceInputManager.acknowledge()
+        }
+    }
+
     // Permission launcher - only triggered when needed
     val permissionLauncher =
         rememberLauncherForActivityResult(
@@ -120,12 +129,16 @@ fun VoiceSearchButton(
             }
         }
 
-    // Show overlay when listening or processing
-    if (state is VoiceInputState.Listening || state is VoiceInputState.Processing) {
+    // Show overlay when listening, processing, or showing error
+    if (state is VoiceInputState.Listening || state is VoiceInputState.Processing || state is VoiceInputState.Error) {
+        val errorResId = (state as? VoiceInputState.Error)?.messageResId
+        val errorMessage = errorResId?.let { stringResource(it) }
+
         VoiceSearchOverlay(
             soundLevel = voiceInputManager.soundLevel,
             partialResult = voiceInputManager.partialResult,
             isProcessing = state is VoiceInputState.Processing,
+            errorMessage = errorMessage,
             onDismiss = { voiceInputManager.stopListening() },
         )
     }
@@ -134,7 +147,10 @@ fun VoiceSearchButton(
     Button(
         onClick = {
             when (state) {
-                is VoiceInputState.Listening -> voiceInputManager.stopListening()
+                is VoiceInputState.Listening -> {
+                    voiceInputManager.stopListening()
+                }
+
                 else -> {
                     if (voiceInputManager.hasPermission) {
                         voiceInputManager.startListening()
@@ -172,10 +188,12 @@ private fun VoiceSearchOverlay(
     soundLevel: Float,
     partialResult: String,
     isProcessing: Boolean,
+    errorMessage: String?,
     onDismiss: () -> Unit,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
+    val errorColor = MaterialTheme.colorScheme.error
 
     // Cache Stroke object to avoid allocation on every frame
     val density = LocalDensity.current
@@ -204,13 +222,15 @@ private fun VoiceSearchOverlay(
         label = "basePulse",
     )
 
-    // Ripple rings animation (0.0 to 1.0, restarts) - paused when processing
+    // Ripple rings animation (0.0 to 1.0, restarts)
+    // We use a constant duration but switch the target value to 0f when processing
+    // to "pause" the effect without causing the fast-looping issue.
     val rippleProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = if (isProcessing) 0f else 1f,
+        targetValue = if (isProcessing || errorMessage != null) 0f else 1f,
         animationSpec =
             infiniteRepeatable(
-                animation = tween(durationMillis = if (isProcessing) 1 else 1500),
+                animation = tween(durationMillis = 1500),
                 repeatMode = RepeatMode.Restart,
             ),
         label = "ripple",
@@ -258,8 +278,8 @@ private fun VoiceSearchOverlay(
                     contentAlignment = Alignment.Center,
                 ) {
                     // Ripple rings expanding outward from the bubble
-                    // Only show ripple rings when actively listening (not processing)
-                    if (!isProcessing) {
+                    // Only show ripple rings when actively listening (not processing or error)
+                    if (!isProcessing && errorMessage == null) {
                         Canvas(modifier = Modifier.size(bubbleSizeDp * 1.8f)) {
                             val canvasCenter = center
                             val baseRadius = bubbleSizeDp.toPx() / 2
@@ -290,7 +310,7 @@ private fun VoiceSearchOverlay(
                                     scaleX = bubbleScale
                                     scaleY = bubbleScale
                                 }.clip(CircleShape)
-                                .background(primaryColor),
+                                .background(if (errorMessage != null) errorColor else primaryColor),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -305,8 +325,10 @@ private fun VoiceSearchOverlay(
                 // Determine status text and accessibility description
                 val processingText = stringResource(R.string.processing)
                 val listeningText = stringResource(R.string.voice_search_prompt)
+
                 val statusText =
                     when {
+                        errorMessage != null -> errorMessage
                         partialResult.isNotBlank() -> partialResult
                         isProcessing -> processingText + ".".repeat(dotAnimation.toInt())
                         else -> listeningText + ".".repeat(dotAnimation.toInt())
@@ -314,6 +336,7 @@ private fun VoiceSearchOverlay(
                 // Accessibility description without animated dots
                 val accessibilityDescription =
                     when {
+                        errorMessage != null -> errorMessage
                         partialResult.isNotBlank() -> partialResult
                         isProcessing -> processingText
                         else -> listeningText
@@ -322,7 +345,7 @@ private fun VoiceSearchOverlay(
                 Text(
                     text = statusText,
                     style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
+                    color = if (errorMessage != null) errorColor else Color.White,
                     modifier =
                         Modifier
                             .weight(1f)

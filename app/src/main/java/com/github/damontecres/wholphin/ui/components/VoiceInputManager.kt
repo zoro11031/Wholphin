@@ -132,7 +132,6 @@ class VoiceInputManager(
         if (isTransitioning) return
         isTransitioning = true
         cleanup()
-        state = VoiceInputState.Idle
         isTransitioning = false
     }
 
@@ -165,6 +164,8 @@ class VoiceInputManager(
         recognizer = null
         soundLevel = 0f
         partialResult = ""
+        // Reset state to Idle to prevent persisting Error/Listening states on reuse
+        state = VoiceInputState.Idle
     }
 
     private fun createRecognitionListener() =
