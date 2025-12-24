@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -117,11 +119,12 @@ fun VoiceSearchButton(
             }
         }
 
-    // Show overlay when listening
-    if (state is VoiceInputState.Listening) {
+    // Show overlay when listening or processing
+    if (state is VoiceInputState.Listening || state is VoiceInputState.Processing) {
         VoiceSearchOverlay(
             soundLevel = voiceInputManager.soundLevel,
             partialResult = voiceInputManager.partialResult,
+            isProcessing = state is VoiceInputState.Processing,
             onDismiss = { voiceInputManager.stopListening() },
         )
     }
@@ -167,10 +170,14 @@ fun VoiceSearchButton(
 private fun VoiceSearchOverlay(
     soundLevel: Float,
     partialResult: String,
+    isProcessing: Boolean,
     onDismiss: () -> Unit,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
+
+    // Cache Stroke object to avoid allocation on every frame
+    val rippleStroke = remember { Stroke(width = 2f) }
 
     // Smooth transitions between sound level changes
     val animatedSoundLevel by animateFloatAsState(
@@ -192,13 +199,13 @@ private fun VoiceSearchOverlay(
         label = "basePulse",
     )
 
-    // Ripple rings animation (0.0 to 1.0, restarts)
+    // Ripple rings animation (0.0 to 1.0, restarts) - paused when processing
     val rippleProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = if (isProcessing) 0f else 1f,
         animationSpec =
             infiniteRepeatable(
-                animation = tween(durationMillis = 1500),
+                animation = tween(durationMillis = if (isProcessing) 1 else 1500),
                 repeatMode = RepeatMode.Restart,
             ),
         label = "ripple",
@@ -254,23 +261,26 @@ private fun VoiceSearchOverlay(
                     contentAlignment = Alignment.Center,
                 ) {
                     // Ripple rings expanding outward from the bubble
-                    Canvas(modifier = Modifier.size(bubbleSizeDp * 1.8f)) {
-                        val canvasCenter = center
-                        val baseRadius = bubbleSizeDp.toPx() / 2
-                        val maxExpansion = bubbleSizeDp.toPx() * 0.35f
+                    // Only show ripple rings when actively listening (not processing)
+                    if (!isProcessing) {
+                        Canvas(modifier = Modifier.size(bubbleSizeDp * 1.8f)) {
+                            val canvasCenter = center
+                            val baseRadius = bubbleSizeDp.toPx() / 2
+                            val maxExpansion = bubbleSizeDp.toPx() * 0.35f
 
-                        for (i in 0..2) {
-                            // Stagger each ring's progress
-                            val ringProgress = (rippleProgress + (i * 0.33f)) % 1f
-                            val ringRadius = baseRadius + (ringProgress * maxExpansion)
-                            val ringAlpha = (1f - ringProgress) * 0.4f
+                            for (i in 0..2) {
+                                // Stagger each ring's progress
+                                val ringProgress = (rippleProgress + (i * 0.33f)) % 1f
+                                val ringRadius = baseRadius + (ringProgress * maxExpansion)
+                                val ringAlpha = (1f - ringProgress) * 0.4f
 
-                            drawCircle(
-                                color = primaryColor.copy(alpha = ringAlpha),
-                                radius = ringRadius,
-                                center = canvasCenter,
-                                style = Stroke(width = 2.dp.toPx()),
-                            )
+                                drawCircle(
+                                    color = primaryColor.copy(alpha = ringAlpha),
+                                    radius = ringRadius,
+                                    center = canvasCenter,
+                                    style = rippleStroke.copy(width = 2.dp.toPx()),
+                                )
+                            }
                         }
                     }
 
@@ -293,17 +303,28 @@ private fun VoiceSearchOverlay(
                     }
                 }
 
-                // Partial result or animated "Listening..." text
+                // Determine status text and accessibility description
+                val processingText = stringResource(R.string.processing)
+                val listeningText = stringResource(R.string.voice_search_prompt)
+                val statusText = when {
+                    partialResult.isNotBlank() -> partialResult
+                    isProcessing -> processingText + ".".repeat(dotAnimation.toInt())
+                    else -> listeningText + ".".repeat(dotAnimation.toInt())
+                }
+                // Accessibility description without animated dots
+                val accessibilityDescription = when {
+                    partialResult.isNotBlank() -> partialResult
+                    isProcessing -> processingText
+                    else -> listeningText
+                }
+
                 Text(
-                    text =
-                        if (partialResult.isNotBlank()) {
-                            partialResult
-                        } else {
-                            stringResource(R.string.voice_search_prompt) + ".".repeat(dotAnimation.toInt())
-                        },
+                    text = statusText,
                     style = MaterialTheme.typography.headlineMedium,
                     color = Color.White,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = accessibilityDescription },
                 )
             }
 

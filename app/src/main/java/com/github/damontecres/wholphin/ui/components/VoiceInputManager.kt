@@ -33,6 +33,9 @@ sealed interface VoiceInputState {
     /** Actively listening for speech */
     data object Listening : VoiceInputState
 
+    /** Speech ended, waiting for recognition results */
+    data object Processing : VoiceInputState
+
     /** Speech recognition completed with a result */
     data class Result(
         val text: String,
@@ -184,6 +187,7 @@ class VoiceInputManager(
 
             override fun onEndOfSpeech() {
                 Timber.d("Speech ended")
+                state = VoiceInputState.Processing
             }
 
             override fun onError(error: Int) {

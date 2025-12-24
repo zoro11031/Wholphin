@@ -106,6 +106,7 @@
     <string name="searching">Searching…</string>
     <string name="voice_search">Voice search</string>
     <string name="voice_search_prompt">Speak to search</string>
+    <string name="processing">Processing</string>
     <string name="press_back_to_cancel">Press back to cancel</string>
     <string name="voice_error_audio">Audio recording error</string>
     <string name="voice_error_client">Voice recognition error</string>
