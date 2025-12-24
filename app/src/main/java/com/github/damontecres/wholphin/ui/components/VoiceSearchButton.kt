@@ -27,15 +27,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -177,7 +177,10 @@ private fun VoiceSearchOverlay(
     val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
 
     // Cache Stroke object to avoid allocation on every frame
-    val rippleStroke = remember { Stroke(width = 2f) }
+    val density = LocalDensity.current
+    val rippleStroke = remember(density) {
+        Stroke(width = with(density) { 2.dp.toPx() })
+    }
 
     // Smooth transitions between sound level changes
     val animatedSoundLevel by animateFloatAsState(
@@ -240,15 +243,7 @@ private fun VoiceSearchOverlay(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors =
-                                listOf(
-                                    Color.Black.copy(alpha = 0.85f),
-                                    Color.Black.copy(alpha = 0.95f),
-                                ),
-                        ),
-                    ),
+                    .background(Color.Black.copy(alpha = 0.9f)),
             contentAlignment = Alignment.Center,
         ) {
             Row(
@@ -278,7 +273,7 @@ private fun VoiceSearchOverlay(
                                     color = primaryColor.copy(alpha = ringAlpha),
                                     radius = ringRadius,
                                     center = canvasCenter,
-                                    style = rippleStroke.copy(width = 2.dp.toPx()),
+                                    style = rippleStroke,
                                 )
                             }
                         }
@@ -289,7 +284,10 @@ private fun VoiceSearchOverlay(
                         modifier =
                             Modifier
                                 .size(bubbleSizeDp)
-                                .scale(bubbleScale)
+                                .graphicsLayer {
+                                    scaleX = bubbleScale
+                                    scaleY = bubbleScale
+                                }
                                 .clip(CircleShape)
                                 .background(primaryColor),
                         contentAlignment = Alignment.Center,
