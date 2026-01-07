@@ -7,12 +7,15 @@ import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
+import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,8 +26,43 @@ class SuggestionService
     constructor(
         private val api: ApiClient,
         private val serverRepository: ServerRepository,
+        private val cache: SuggestionsCache,
     ) {
+        fun getSuggestionsFlow(
+            parentId: UUID,
+            itemKind: BaseItemKind,
+            itemsPerRow: Int,
+        ): Flow<List<BaseItem>> =
+            flow {
+                val cached = cache.get(parentId, itemKind)
+                if (cached != null) {
+                    emit(cached.items)
+                }
+
+                try {
+                    val fresh = fetchSuggestions(parentId, itemKind, itemsPerRow)
+                    cache.put(parentId, itemKind, fresh)
+                    emit(fresh)
+                } catch (ex: Exception) {
+                    Timber.e(ex, "Failed to fetch suggestions")
+                    if (cached == null) throw ex
+                }
+            }
+
         suspend fun getSuggestions(
+            parentId: UUID,
+            itemKind: BaseItemKind,
+            itemsPerRow: Int,
+        ): List<BaseItem> {
+            val cached = cache.get(parentId, itemKind)
+            if (cached != null) return cached.items
+
+            return fetchSuggestions(parentId, itemKind, itemsPerRow).also {
+                cache.put(parentId, itemKind, it)
+            }
+        }
+
+        private suspend fun fetchSuggestions(
             parentId: UUID,
             itemKind: BaseItemKind,
             itemsPerRow: Int,

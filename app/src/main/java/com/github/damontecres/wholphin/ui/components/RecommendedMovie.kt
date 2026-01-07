@@ -153,12 +153,18 @@ class RecommendedMovieViewModel
                         .toBaseItems(api, false)
                 }
 
-                update(R.string.suggestions) {
-                    suggestionService.getSuggestions(
-                        parentId = parentId,
-                        itemKind = BaseItemKind.MOVIE,
-                        itemsPerRow = itemsPerRow,
-                    )
+                viewModelScope.launch(Dispatchers.IO) {
+                    suggestionService
+                        .getSuggestionsFlow(parentId, BaseItemKind.MOVIE, itemsPerRow)
+                        .collect { items ->
+                            update(
+                                R.string.suggestions,
+                                HomeRowLoadingState.Success(
+                                    context.getString(R.string.suggestions),
+                                    items,
+                                ),
+                            )
+                        }
                 }
 
                 update(R.string.top_unwatched) {
