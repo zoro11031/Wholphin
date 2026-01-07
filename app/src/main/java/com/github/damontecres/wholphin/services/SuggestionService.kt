@@ -2,7 +2,6 @@ package com.github.damontecres.wholphin.services
 
 import com.github.damontecres.wholphin.data.ServerRepository
 import com.github.damontecres.wholphin.data.model.BaseItem
-import com.github.damontecres.wholphin.ui.SlimItemFields
 import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -34,28 +33,57 @@ class SuggestionService
             itemsPerRow: Int,
         ): Flow<List<BaseItem>> =
             flow {
+                // Step 1: Emit cached data immediately (stale-while-revalidate)
                 val cached = cache.get(parentId, itemKind)
+                val cachedIds = cached?.items?.map { it.id }?.toSet()
                 if (cached != null) {
                     emit(cached.items)
                 }
 
+                // Step 2: Fetch fresh data in background
                 try {
                     val fresh = fetchSuggestions(parentId, itemKind, itemsPerRow)
-                    cache.put(parentId, itemKind, fresh)
-                    emit(fresh)
+                    val freshIds = fresh.map { it.id }.toSet()
+
+                    // Step 3: Only emit if different from cached to avoid unnecessary UI updates
+                    if (cachedIds != freshIds) {
+                        cache.put(parentId, itemKind, fresh)
+                        emit(fresh)
+                    } else {
+                        // Update cache timestamp even if content is same
+                        cache.put(parentId, itemKind, fresh)
+                    }
                 } catch (ex: Exception) {
                     Timber.e(ex, "Failed to fetch suggestions")
                     if (cached == null) throw ex
                 }
             }
 
+        /**
+         * Gets suggestions with stale-while-revalidate strategy.
+         * Returns cached data immediately if available, then refreshes in background.
+         * If no cache exists, fetches and returns fresh data.
+         */
         suspend fun getSuggestions(
             parentId: UUID,
             itemKind: BaseItemKind,
             itemsPerRow: Int,
         ): List<BaseItem> {
             val cached = cache.get(parentId, itemKind)
-            if (cached != null) return cached.items
+            if (cached != null) {
+                // Return cached immediately, refresh in background
+                coroutineScope {
+                    async(Dispatchers.IO) {
+                        try {
+                            val fresh = fetchSuggestions(parentId, itemKind, itemsPerRow)
+                            cache.put(parentId, itemKind, fresh)
+                        } catch (ex: Exception) {
+                            Timber.w(ex, "Background refresh failed")
+                        }
+                    }
+                }
+                return cached.items
+            }
 
             return fetchSuggestions(parentId, itemKind, itemsPerRow).also {
                 cache.put(parentId, itemKind, it)
@@ -78,7 +106,7 @@ class SuggestionService
                             GetItemsRequest(
                                 parentId = parentId,
                                 userId = userId,
-                                fields = SlimItemFields + listOf(ItemFields.GENRES),
+                                fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO, ItemFields.GENRES),
                                 includeItemTypes = listOf(historyItemType),
                                 recursive = true,
                                 isPlayed = true,
@@ -86,6 +114,7 @@ class SuggestionService
                                 sortOrder = listOf(SortOrder.DESCENDING),
                                 limit = 20,
                                 enableTotalRecordCount = false,
+                                imageTypeLimit = 1,
                             )
                         GetItemsRequestHandler
                             .execute(api, historyRequest)
@@ -102,13 +131,14 @@ class SuggestionService
                             GetItemsRequest(
                                 parentId = parentId,
                                 userId = userId,
-                                fields = SlimItemFields,
+                                fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO),
                                 includeItemTypes = listOf(itemKind),
                                 recursive = true,
                                 isPlayed = false,
                                 sortBy = listOf(ItemSortBy.RANDOM),
                                 limit = itemsPerRow,
                                 enableTotalRecordCount = false,
+                                imageTypeLimit = 1,
                             )
                         GetItemsRequestHandler
                             .execute(api, randomRequest)
@@ -123,7 +153,7 @@ class SuggestionService
                             GetItemsRequest(
                                 parentId = parentId,
                                 userId = userId,
-                                fields = SlimItemFields,
+                                fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO),
                                 includeItemTypes = listOf(itemKind),
                                 recursive = true,
                                 isPlayed = false,
@@ -131,6 +161,7 @@ class SuggestionService
                                 sortOrder = listOf(SortOrder.DESCENDING),
                                 limit = (itemsPerRow * 0.4).toInt().coerceAtLeast(1),
                                 enableTotalRecordCount = false,
+                                imageTypeLimit = 1,
                             )
                         GetItemsRequestHandler
                             .execute(api, freshRequest)
@@ -143,11 +174,17 @@ class SuggestionService
                 val random = randomDeferred.await()
                 val fresh = freshDeferred.await()
 
-                val excludeIds = seedItems.mapNotNull { it.seriesId ?: it.id }.toSet()
+                // HashSet for O(1) lookup during filtering
+                val excludeIds: Set<UUID> = seedItems.mapNotNullTo(HashSet()) { it.seriesId ?: it.id }
                 val allGenreIds =
                     seedItems
                         .flatMap { it.genreItems?.mapNotNull { g -> g.id } ?: emptyList() }
-                        .distinct()
+                        .groupingBy { it }
+                        .eachCount()
+                        .entries
+                        .sortedByDescending { it.value }
+                        .take(3)
+                        .map { it.key }
 
                 val contextual =
                     if (allGenreIds.isEmpty()) {
@@ -157,7 +194,7 @@ class SuggestionService
                             GetItemsRequest(
                                 parentId = parentId,
                                 userId = userId,
-                                fields = SlimItemFields,
+                                fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO),
                                 includeItemTypes = listOf(itemKind),
                                 genreIds = allGenreIds,
                                 recursive = true,
@@ -166,6 +203,7 @@ class SuggestionService
                                 sortBy = listOf(ItemSortBy.RANDOM),
                                 limit = (itemsPerRow * 0.5).toInt().coerceAtLeast(1),
                                 enableTotalRecordCount = false,
+                                imageTypeLimit = 1,
                             )
                         GetItemsRequestHandler
                             .execute(api, contextualRequest)
