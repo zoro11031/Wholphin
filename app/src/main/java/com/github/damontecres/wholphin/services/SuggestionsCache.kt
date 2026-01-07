@@ -25,10 +25,10 @@ data class CachedSuggestions(
 )
 
 @Singleton
-open class SuggestionsCache
+class SuggestionsCache
     @Inject
     constructor(
-        @param:ApplicationContext private val context: Context,
+        @ApplicationContext private val context: Context,
     ) {
         private val json = Json { ignoreUnknownKeys = true }
         private val mutex = Mutex()

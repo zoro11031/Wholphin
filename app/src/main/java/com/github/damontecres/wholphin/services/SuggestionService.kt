@@ -31,7 +31,6 @@ class SuggestionService
     ) {
         private val genreAffinityCache = AtomicReference<List<UUID>>(emptyList())
 
-        /** Emits cached suggestions immediately, then refreshes in background. */
         fun getSuggestionsFlow(
             parentId: UUID,
             itemKind: BaseItemKind,
@@ -53,7 +52,6 @@ class SuggestionService
             }
         }
 
-        /** Returns cached suggestions if available, otherwise fetches fresh. */
         suspend fun getSuggestions(
             parentId: UUID,
             itemKind: BaseItemKind,
