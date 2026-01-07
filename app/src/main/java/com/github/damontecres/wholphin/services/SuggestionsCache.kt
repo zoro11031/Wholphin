@@ -13,6 +13,7 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,6 +32,14 @@ class SuggestionsCache
         private val json = Json { ignoreUnknownKeys = true }
         private val mutex = Mutex()
 
+        // L1 in-memory cache for fast access
+        private val memoryCache = ConcurrentHashMap<String, CachedSuggestions>()
+
+        private fun cacheKey(
+            libraryId: UUID,
+            itemKind: BaseItemKind,
+        ): String = "${libraryId}_${itemKind.serialName}"
+
         private fun cacheFile(
             libraryId: UUID,
             itemKind: BaseItemKind,
@@ -43,12 +52,20 @@ class SuggestionsCache
         suspend fun get(
             libraryId: UUID,
             itemKind: BaseItemKind,
-        ): CachedSuggestions? =
-            withContext(Dispatchers.IO) {
+        ): CachedSuggestions? {
+            val key = cacheKey(libraryId, itemKind)
+
+            // L1: Check memory cache first
+            memoryCache[key]?.let { return it }
+
+            // L2: Read from disk and populate L1
+            return withContext(Dispatchers.IO) {
                 try {
                     val file = cacheFile(libraryId, itemKind)
                     if (file.exists()) {
-                        json.decodeFromString<CachedSuggestions>(file.readText())
+                        val cached = json.decodeFromString<CachedSuggestions>(file.readText())
+                        memoryCache[key] = cached
+                        cached
                     } else {
                         null
                     }
@@ -57,26 +74,40 @@ class SuggestionsCache
                     null
                 }
             }
+        }
 
         suspend fun put(
             libraryId: UUID,
             itemKind: BaseItemKind,
             items: List<BaseItem>,
-        ) = withContext(Dispatchers.IO) {
-            mutex.withLock {
-                try {
-                    val cached = CachedSuggestions(items, System.currentTimeMillis())
-                    cacheFile(libraryId, itemKind).writeText(json.encodeToString(cached))
-                } catch (ex: Exception) {
-                    Timber.w(ex, "Failed to write suggestions cache")
+        ) {
+            val key = cacheKey(libraryId, itemKind)
+            val cached = CachedSuggestions(items, System.currentTimeMillis())
+
+            // L1: Update memory cache immediately
+            memoryCache[key] = cached
+
+            // L2: Write to disk (thread-safe)
+            withContext(Dispatchers.IO) {
+                mutex.withLock {
+                    try {
+                        cacheFile(libraryId, itemKind).writeText(json.encodeToString(cached))
+                    } catch (ex: Exception) {
+                        Timber.w(ex, "Failed to write suggestions cache")
+                    }
                 }
             }
         }
 
-        suspend fun clear() =
+        suspend fun clear() {
+            // Clear L1 memory cache
+            memoryCache.clear()
+
+            // Clear L2 disk cache
             withContext(Dispatchers.IO) {
                 mutex.withLock {
                     File(context.cacheDir, "suggestions").deleteRecursively()
                 }
             }
+        }
     }

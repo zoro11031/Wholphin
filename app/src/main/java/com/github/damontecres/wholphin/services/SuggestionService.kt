@@ -16,6 +16,7 @@ import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import timber.log.Timber
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,6 +28,9 @@ class SuggestionService
         private val serverRepository: ServerRepository,
         private val cache: SuggestionsCache,
     ) {
+        // Cache preferred genres for parallel contextual requests
+        private val genreAffinityCache = AtomicReference<List<UUID>>(emptyList())
+
         fun getSuggestionsFlow(
             parentId: UUID,
             itemKind: BaseItemKind,
@@ -60,9 +64,9 @@ class SuggestionService
             }
 
         /**
-         * Gets suggestions with stale-while-revalidate strategy.
-         * Returns cached data immediately if available, then refreshes in background.
-         * If no cache exists, fetches and returns fresh data.
+         * Gets suggestions with cache-first strategy.
+         * Returns cached data if available, otherwise fetches fresh data.
+         * For stale-while-revalidate behavior, use getSuggestionsFlow() instead.
          */
         suspend fun getSuggestions(
             parentId: UUID,
@@ -71,17 +75,6 @@ class SuggestionService
         ): List<BaseItem> {
             val cached = cache.get(parentId, itemKind)
             if (cached != null) {
-                // Return cached immediately, refresh in background
-                coroutineScope {
-                    async(Dispatchers.IO) {
-                        try {
-                            val fresh = fetchSuggestions(parentId, itemKind, itemsPerRow)
-                            cache.put(parentId, itemKind, fresh)
-                        } catch (ex: Exception) {
-                            Timber.w(ex, "Background refresh failed")
-                        }
-                    }
-                }
                 return cached.items
             }
 
@@ -100,6 +93,10 @@ class SuggestionService
                 val isSeries = itemKind == BaseItemKind.SERIES
                 val historyItemType = if (isSeries) BaseItemKind.EPISODE else itemKind
 
+                // Use cached genres for parallel contextual request
+                val cachedGenreIds = genreAffinityCache.get()
+
+                // Launch all requests in parallel
                 val historyDeferred =
                     async(Dispatchers.IO) {
                         val historyRequest =
@@ -170,13 +167,45 @@ class SuggestionService
                             .orEmpty()
                     }
 
+                // Launch contextual request in parallel using cached genres
+                val contextualDeferred =
+                    async(Dispatchers.IO) {
+                        if (cachedGenreIds.isEmpty()) {
+                            emptyList()
+                        } else {
+                            val contextualRequest =
+                                GetItemsRequest(
+                                    parentId = parentId,
+                                    userId = userId,
+                                    fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO),
+                                    includeItemTypes = listOf(itemKind),
+                                    genreIds = cachedGenreIds,
+                                    recursive = true,
+                                    isPlayed = false,
+                                    sortBy = listOf(ItemSortBy.RANDOM),
+                                    limit = (itemsPerRow * 0.5).toInt().coerceAtLeast(1),
+                                    enableTotalRecordCount = false,
+                                    imageTypeLimit = 1,
+                                )
+                            GetItemsRequestHandler
+                                .execute(api, contextualRequest)
+                                .content
+                                .items
+                                .orEmpty()
+                        }
+                    }
+
+                // Await all results
                 val seedItems = historyDeferred.await()
                 val random = randomDeferred.await()
                 val fresh = freshDeferred.await()
+                val contextual = contextualDeferred.await()
 
                 // HashSet for O(1) lookup during filtering
                 val excludeIds: Set<UUID> = seedItems.mapNotNullTo(HashSet()) { it.seriesId ?: it.id }
-                val allGenreIds =
+
+                // Update genre affinity cache for the next execution
+                val freshGenreIds =
                     seedItems
                         .flatMap { it.genreItems?.mapNotNull { g -> g.id } ?: emptyList() }
                         .groupingBy { it }
@@ -185,32 +214,7 @@ class SuggestionService
                         .sortedByDescending { it.value }
                         .take(3)
                         .map { it.key }
-
-                val contextual =
-                    if (allGenreIds.isEmpty()) {
-                        emptyList()
-                    } else {
-                        val contextualRequest =
-                            GetItemsRequest(
-                                parentId = parentId,
-                                userId = userId,
-                                fields = listOf(ItemFields.PRIMARY_IMAGE_ASPECT_RATIO),
-                                includeItemTypes = listOf(itemKind),
-                                genreIds = allGenreIds,
-                                recursive = true,
-                                isPlayed = false,
-                                excludeItemIds = excludeIds.toList(),
-                                sortBy = listOf(ItemSortBy.RANDOM),
-                                limit = (itemsPerRow * 0.5).toInt().coerceAtLeast(1),
-                                enableTotalRecordCount = false,
-                                imageTypeLimit = 1,
-                            )
-                        GetItemsRequestHandler
-                            .execute(api, contextualRequest)
-                            .content
-                            .items
-                            .orEmpty()
-                    }
+                genreAffinityCache.set(freshGenreIds)
 
                 (contextual + fresh + random)
                     .distinctBy { it.id }
