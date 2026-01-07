@@ -9,7 +9,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.ServerRepository
-import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.preferences.AppPreference
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.UserPreferences
@@ -240,7 +239,6 @@ class RecommendedMovieViewModel
                         }
                     }
 
-                // SuggestionService remains a separate flow collection (not awaited)
                 viewModelScope.launch(Dispatchers.IO) {
                     suggestionService
                         .getSuggestionsFlow(parentId, BaseItemKind.MOVIE, itemsPerRow)

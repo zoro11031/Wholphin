@@ -37,24 +37,21 @@ class SuggestionService
             itemsPerRow: Int,
         ): Flow<List<BaseItem>> =
             flow {
-                // Step 1: Emit cached data immediately (stale-while-revalidate)
                 val cached = cache.get(parentId, itemKind)
                 val cachedIds = cached?.items?.map { it.id }?.toSet()
                 if (cached != null) {
                     emit(cached.items)
                 }
 
-                // Step 2: Fetch fresh data in background
                 try {
                     val fresh = fetchSuggestions(parentId, itemKind, itemsPerRow)
                     val freshIds = fresh.map { it.id }.toSet()
 
-                    // Step 3: Only emit if different from cached to avoid unnecessary UI updates
+                    // Only emit if content changed
                     if (cachedIds != freshIds) {
                         cache.put(parentId, itemKind, fresh)
                         emit(fresh)
                     } else {
-                        // Update cache timestamp even if content is same
                         cache.put(parentId, itemKind, fresh)
                     }
                 } catch (ex: Exception) {
@@ -92,11 +89,8 @@ class SuggestionService
                 val userId = serverRepository.currentUser.value?.id
                 val isSeries = itemKind == BaseItemKind.SERIES
                 val historyItemType = if (isSeries) BaseItemKind.EPISODE else itemKind
-
-                // Use cached genres for parallel contextual request
                 val cachedGenreIds = genreAffinityCache.get()
 
-                // Launch all requests in parallel
                 val historyDeferred =
                     async(Dispatchers.IO) {
                         val historyRequest =
@@ -167,7 +161,6 @@ class SuggestionService
                             .orEmpty()
                     }
 
-                // Launch contextual request in parallel using cached genres
                 val contextualDeferred =
                     async(Dispatchers.IO) {
                         if (cachedGenreIds.isEmpty()) {
@@ -195,16 +188,13 @@ class SuggestionService
                         }
                     }
 
-                // Await all results
                 val seedItems = historyDeferred.await()
                 val random = randomDeferred.await()
                 val fresh = freshDeferred.await()
                 val contextual = contextualDeferred.await()
 
-                // HashSet for O(1) lookup during filtering
-                val excludeIds: Set<UUID> = seedItems.mapNotNullTo(HashSet()) { it.seriesId ?: it.id }
+                val excludeIds = seedItems.mapNotNullTo(HashSet<UUID>()) { it.seriesId ?: it.id }
 
-                // Update genre affinity cache for the next execution
                 val freshGenreIds =
                     seedItems
                         .flatMap { it.genreItems?.mapNotNull { g -> g.id } ?: emptyList() }

@@ -31,8 +31,6 @@ class SuggestionsCache
     ) {
         private val json = Json { ignoreUnknownKeys = true }
         private val mutex = Mutex()
-
-        // L1 in-memory cache for fast access
         private val memoryCache = ConcurrentHashMap<String, CachedSuggestions>()
 
         private fun cacheKey(
@@ -54,11 +52,8 @@ class SuggestionsCache
             itemKind: BaseItemKind,
         ): CachedSuggestions? {
             val key = cacheKey(libraryId, itemKind)
-
-            // L1: Check memory cache first
             memoryCache[key]?.let { return it }
 
-            // L2: Read from disk and populate L1
             return withContext(Dispatchers.IO) {
                 try {
                     val file = cacheFile(libraryId, itemKind)
@@ -83,11 +78,8 @@ class SuggestionsCache
         ) {
             val key = cacheKey(libraryId, itemKind)
             val cached = CachedSuggestions(items, System.currentTimeMillis())
-
-            // L1: Update memory cache immediately
             memoryCache[key] = cached
 
-            // L2: Write to disk (thread-safe)
             withContext(Dispatchers.IO) {
                 mutex.withLock {
                     try {
@@ -100,10 +92,7 @@ class SuggestionsCache
         }
 
         suspend fun clear() {
-            // Clear L1 memory cache
             memoryCache.clear()
-
-            // Clear L2 disk cache
             withContext(Dispatchers.IO) {
                 mutex.withLock {
                     File(context.cacheDir, "suggestions").deleteRecursively()

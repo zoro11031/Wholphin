@@ -9,7 +9,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.ServerRepository
-import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.UserPreferences
 import com.github.damontecres.wholphin.services.BackdropService
@@ -42,7 +41,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
-import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
@@ -298,7 +296,6 @@ class RecommendedTvShowViewModel
                         }
                     }
 
-                // SuggestionService remains a separate flow collection (not awaited)
                 viewModelScope.launch(Dispatchers.IO) {
                     suggestionService
                         .getSuggestionsFlow(parentId, BaseItemKind.SERIES, itemsPerRow)
@@ -314,21 +311,12 @@ class RecommendedTvShowViewModel
                 }
 
                 // Wait for all row fetches to complete
-                try {
-                    awaitAll(
-                        resumeNextUpDeferred,
-                        recentlyReleasedDeferred,
-                        recentlyAddedDeferred,
-                        topUnwatchedDeferred,
-                    )
-                } catch (ex: Exception) {
-                    // Individual async blocks handle their own errors,
-                    // but if something unexpected escapes, log and update state
-                    Timber.e(ex, "Unexpected error during row fetches")
-                    if (loading.value == LoadingState.Loading || loading.value == LoadingState.Pending) {
-                        loading.setValueOnMain(LoadingState.Error(ex))
-                    }
-                }
+                awaitAll(
+                    resumeNextUpDeferred,
+                    recentlyReleasedDeferred,
+                    recentlyAddedDeferred,
+                    topUnwatchedDeferred,
+                )
 
                 if (loading.value == LoadingState.Loading || loading.value == LoadingState.Pending) {
                     loading.setValueOnMain(LoadingState.Success)
