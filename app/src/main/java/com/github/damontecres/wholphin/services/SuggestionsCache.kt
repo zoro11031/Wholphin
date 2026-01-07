@@ -12,8 +12,9 @@ import kotlinx.serialization.json.Json
 import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
 import java.io.File
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,69 +25,53 @@ data class CachedSuggestions(
 )
 
 @Singleton
-class SuggestionsCache
+open class SuggestionsCache
     @Inject
     constructor(
-        @ApplicationContext private val context: Context,
+        @param:ApplicationContext private val context: Context,
     ) {
         private val json = Json { ignoreUnknownKeys = true }
         private val mutex = Mutex()
-        private val memoryCache = ConcurrentHashMap<String, CachedSuggestions>()
 
-        private fun cacheKey(
-            libraryId: UUID,
-            itemKind: BaseItemKind,
-        ): String = "${libraryId}_${itemKind.serialName}"
+        private val memoryCache: MutableMap<String, CachedSuggestions> =
+            Collections.synchronizedMap(
+                object : LinkedHashMap<String, CachedSuggestions>(MAX_MEMORY_CACHE_SIZE, 0.75f, true) {
+                    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedSuggestions>?): Boolean =
+                        size > MAX_MEMORY_CACHE_SIZE
+                },
+            )
 
-        private fun cacheFile(
-            libraryId: UUID,
-            itemKind: BaseItemKind,
-        ): File {
-            val cacheDir = File(context.cacheDir, "suggestions")
-            cacheDir.mkdirs()
-            return File(cacheDir, "${libraryId}_${itemKind.serialName}.json")
-        }
+        private fun cacheKey(libraryId: UUID, itemKind: BaseItemKind): String =
+            "${libraryId}_${itemKind.serialName}"
 
-        suspend fun get(
-            libraryId: UUID,
-            itemKind: BaseItemKind,
-        ): CachedSuggestions? {
+        private fun cacheFile(libraryId: UUID, itemKind: BaseItemKind): File =
+            File(context.cacheDir, "suggestions").also { it.mkdirs() }
+                .resolve("${cacheKey(libraryId, itemKind)}.json")
+
+        suspend fun get(libraryId: UUID, itemKind: BaseItemKind): CachedSuggestions? {
             val key = cacheKey(libraryId, itemKind)
             memoryCache[key]?.let { return it }
 
             return withContext(Dispatchers.IO) {
-                try {
-                    val file = cacheFile(libraryId, itemKind)
-                    if (file.exists()) {
-                        val cached = json.decodeFromString<CachedSuggestions>(file.readText())
-                        memoryCache[key] = cached
-                        cached
-                    } else {
-                        null
-                    }
-                } catch (ex: Exception) {
-                    Timber.w(ex, "Failed to read suggestions cache")
-                    null
-                }
+                runCatching {
+                    cacheFile(libraryId, itemKind)
+                        .takeIf { it.exists() }
+                        ?.let { json.decodeFromString<CachedSuggestions>(it.readText()) }
+                        ?.also { memoryCache[key] = it }
+                }.onFailure { Timber.w(it, "Failed to read suggestions cache") }
+                    .getOrNull()
             }
         }
 
-        suspend fun put(
-            libraryId: UUID,
-            itemKind: BaseItemKind,
-            items: List<BaseItem>,
-        ) {
+        suspend fun put(libraryId: UUID, itemKind: BaseItemKind, items: List<BaseItem>) {
             val key = cacheKey(libraryId, itemKind)
             val cached = CachedSuggestions(items, System.currentTimeMillis())
             memoryCache[key] = cached
 
             withContext(Dispatchers.IO) {
                 mutex.withLock {
-                    try {
-                        cacheFile(libraryId, itemKind).writeText(json.encodeToString(cached))
-                    } catch (ex: Exception) {
-                        Timber.w(ex, "Failed to write suggestions cache")
-                    }
+                    runCatching { cacheFile(libraryId, itemKind).writeText(json.encodeToString(cached)) }
+                        .onFailure { Timber.w(it, "Failed to write suggestions cache") }
                 }
             }
         }
@@ -98,5 +83,9 @@ class SuggestionsCache
                     File(context.cacheDir, "suggestions").deleteRecursively()
                 }
             }
+        }
+
+        companion object {
+            private const val MAX_MEMORY_CACHE_SIZE = 8
         }
     }
