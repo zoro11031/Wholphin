@@ -71,6 +71,9 @@ class SuggestionsWorker
                         .getUserViews(userId = userId)
                         .content.items
                         .orEmpty()
+                if (views.isEmpty()) {
+                    return Result.success()
+                }
                 var successCount = 0
                 for (view in views) {
                     val itemKind =

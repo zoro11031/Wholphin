@@ -257,6 +257,6 @@ dependencies {
 
     testImplementation(libs.mockk.android)
     testImplementation(libs.mockk.agent)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.core.testing)
 }

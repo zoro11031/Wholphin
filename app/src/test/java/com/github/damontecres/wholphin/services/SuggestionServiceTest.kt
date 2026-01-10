@@ -1,6 +1,6 @@
 package com.github.damontecres.wholphin.services
 
-import androidx.lifecycle.LiveData
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.lifecycle.MutableLiveData
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -10,27 +10,49 @@ import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.Response
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SuggestionServiceTest {
-    private val mockApi = mockk<ApiClient>(relaxed = true)
+    @get:Rule
+    val instantTaskExecutorRule = InstantTaskExecutorRule()
 
-    // We'll mock GetItemsRequestHandler.execute instead of ItemsApi.getItems
+    private val testDispatcher = StandardTestDispatcher()
+
+    private val mockApi = mockk<ApiClient>(relaxed = true)
     private val mockServerRepository = mockk<ServerRepository>()
     private val mockCache = mockk<SuggestionsCache>()
     private val mockWorkManager = mockk<WorkManager>()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     private fun createService() =
         SuggestionService(
@@ -271,5 +293,29 @@ class SuggestionServiceTest {
             val items = (result as SuggestionsResource.Success).items
             assertEquals(1, items.size)
             assertEquals(cachedId, items[0].id)
+        }
+
+    @Test
+    fun getSuggestionsFlow_emitsEmpty_whenApiFails() =
+        runTest {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+
+            val cachedId = UUID.randomUUID()
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns CachedSuggestions(listOf(cachedId.toString()))
+
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } throws RuntimeException("Network error")
+
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+
+            assertEquals(SuggestionsResource.Empty, result)
         }
 }

@@ -280,7 +280,6 @@ class SuggestionsWorkerTest {
             val result = worker.doWork()
 
             assertEquals(ListenableWorker.Result.success(), result)
-            coVerify { mockCache.save() }
         }
 
     @Test
@@ -473,6 +472,34 @@ class SuggestionsWorkerTest {
             val result = worker.doWork()
 
             assertEquals(ListenableWorker.Result.retry(), result)
+        }
+
+    @Test
+    fun doWork_returnsSuccess_whenSomeViewsFailPartialSuccess() =
+        runTest {
+            val movieViewId = UUID.randomUUID()
+            val tvViewId = UUID.randomUUID()
+            val movieView = mockView(movieViewId, CollectionType.MOVIES)
+            val tvView = mockView(tvViewId, CollectionType.TVSHOWS)
+
+            every { mockPreferences.data } returns flowOf(mockAppPreferences(maxItemsPerRow = 10))
+            coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns
+                mockQueryResult(listOf(movieView, tvView))
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery {
+                GetItemsRequestHandler.execute(mockApi, match { it.parentId == movieViewId })
+            } returns mockQueryResult(listOf(mockItem()))
+            coEvery {
+                GetItemsRequestHandler.execute(mockApi, match { it.parentId == tvViewId })
+            } throws RuntimeException("Network error for TV view")
+
+            val worker = createWorker()
+            val result = worker.doWork()
+
+            assertEquals(ListenableWorker.Result.success(), result)
+            coVerify { mockCache.put(testUserId, movieViewId, BaseItemKind.MOVIE, any()) }
+            coVerify(exactly = 0) { mockCache.put(testUserId, tvViewId, BaseItemKind.SERIES, any()) }
+            coVerify { mockCache.save() }
         }
 
     // endregion

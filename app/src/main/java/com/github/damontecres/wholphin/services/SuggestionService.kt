@@ -14,6 +14,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
+import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -60,7 +61,12 @@ class SuggestionService
                         val cachedIds = cache.get(userId, parentId, itemKind)?.ids.orEmpty()
 
                         if (cachedIds.isNotEmpty()) {
-                            emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
+                            try {
+                                emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
+                            } catch (e: Exception) {
+                                Timber.e(e, "Failed to fetch items for suggestions")
+                                emit(SuggestionsResource.Empty)
+                            }
                             return@flow
                         }
 
