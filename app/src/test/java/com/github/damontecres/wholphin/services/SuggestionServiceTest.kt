@@ -52,6 +52,7 @@ class SuggestionServiceTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        io.mockk.unmockkObject(GetItemsRequestHandler)
     }
 
     private fun createService() =

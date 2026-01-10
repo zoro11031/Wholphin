@@ -53,6 +53,7 @@ class SuggestionsCache
         @Volatile
         private var diskCacheLoaded = false
         private val dirtyKeys: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+        private val lock = Any()
 
         private fun writeEntryToDisk(
             key: String,
@@ -128,7 +129,7 @@ class SuggestionsCache
         ) {
             val key = cacheKey(userId, libraryId, itemKind)
             val cached = CachedSuggestions(ids)
-            synchronized(dirtyKeys) {
+            synchronized(lock) {
                 memoryCache[key] = cached
                 dirtyKeys.add(key)
                 _cacheVersion.update { it + 1 }

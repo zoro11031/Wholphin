@@ -177,7 +177,6 @@ class SuggestionsSchedulerServiceTest {
 
             currentLiveData.value = userWithServer
             advanceUntilIdle()
-            Thread.sleep(50)
 
             verify { mockWorkManager.enqueue(any<androidx.work.WorkRequest>()) }
             verify {
