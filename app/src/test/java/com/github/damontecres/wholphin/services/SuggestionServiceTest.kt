@@ -255,7 +255,7 @@ class SuggestionServiceTest {
             coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns CachedSuggestions(listOf(cachedId.toString()))
 
             val dto =
-                mockk<BaseItemDto> {
+                mockk<BaseItemDto>(relaxed = true) {
                     every { id } returns cachedId
                     every { type } returns BaseItemKind.MOVIE
                 }

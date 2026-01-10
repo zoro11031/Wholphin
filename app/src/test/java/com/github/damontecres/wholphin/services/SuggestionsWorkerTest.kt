@@ -212,8 +212,14 @@ class SuggestionsWorkerTest {
             every { mockApi.accessToken } returns null
 
             val mockUser = mockk<CurrentUser>()
-            every { mockServerRepository.current } returns MutableLiveData(mockUser)
-            coEvery { mockServerRepository.restoreSession(testServerId, testUserId) } returns mockUser
+            var sessionRestored = false
+            every { mockServerRepository.current } answers {
+                if (sessionRestored) MutableLiveData(mockUser) else MutableLiveData(null)
+            }
+            coEvery { mockServerRepository.restoreSession(testServerId, testUserId) } coAnswers {
+                sessionRestored = true
+                mockUser
+            }
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences())
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(emptyList())
