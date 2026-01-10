@@ -12,6 +12,7 @@ import com.github.damontecres.wholphin.data.model.JellyfinServer
 import com.github.damontecres.wholphin.data.model.JellyfinUser
 import com.github.damontecres.wholphin.preferences.AppPreferences
 import com.github.damontecres.wholphin.preferences.HomePagePreferences
+import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -24,7 +25,10 @@ import kotlinx.coroutines.test.runTest
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.Response
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.userViewsApi
 import org.jellyfin.sdk.api.operations.ItemsApi
+import org.jellyfin.sdk.api.operations.UserLibraryApi
 import org.jellyfin.sdk.api.operations.UserViewsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
@@ -61,6 +65,7 @@ class SuggestionsWorkerTest {
 
         every { mockApi.userViewsApi } returns mockUserViewsApi
         every { mockApi.itemsApi } returns mockItemsApi
+        // We'll mock GetItemsRequestHandler.execute per-test when needed
         every { mockApi.baseUrl } returns "http://localhost"
         every { mockApi.accessToken } returns "test-token"
 
@@ -208,7 +213,7 @@ class SuggestionsWorkerTest {
 
             val mockUser = mockk<CurrentUser>()
             every { mockServerRepository.current } returns MutableLiveData(mockUser)
-            coEvery { mockServerRepository.restoreSession(testServerId, testUserId) } just Runs
+            coEvery { mockServerRepository.restoreSession(testServerId, testUserId) } returns mockUser
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences())
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(emptyList())
@@ -226,7 +231,7 @@ class SuggestionsWorkerTest {
             every { mockApi.baseUrl } returns null
             every { mockApi.accessToken } returns null
             every { mockServerRepository.current } returns MutableLiveData(null)
-            coEvery { mockServerRepository.restoreSession(any(), any()) } just Runs
+            coEvery { mockServerRepository.restoreSession(any(), any()) } returns null
 
             val worker = createWorker()
             val result = worker.doWork()
@@ -275,7 +280,8 @@ class SuggestionsWorkerTest {
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences(maxItemsPerRow = 10))
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(listOf(movieView))
-            coEvery { mockItemsApi.getItems(any()) } returns mockQueryResult(listOf(movieItem))
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns mockQueryResult(listOf(movieItem))
 
             val capturedIds = slot<List<String>>()
             coEvery { mockCache.put(testUserId, movieViewId, BaseItemKind.MOVIE, capture(capturedIds)) } just Runs
@@ -297,7 +303,8 @@ class SuggestionsWorkerTest {
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences(maxItemsPerRow = 10))
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(listOf(tvView))
-            coEvery { mockItemsApi.getItems(any()) } returns mockQueryResult(listOf(seriesItem))
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns mockQueryResult(listOf(seriesItem))
 
             val worker = createWorker()
             val result = worker.doWork()
@@ -343,7 +350,8 @@ class SuggestionsWorkerTest {
                 mockQueryResult(
                     listOf(movieView, tvView),
                 )
-            coEvery { mockItemsApi.getItems(any()) } returns mockQueryResult(listOf(mockItem()))
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns mockQueryResult(listOf(mockItem()))
 
             val worker = createWorker()
             val result = worker.doWork()
@@ -446,7 +454,8 @@ class SuggestionsWorkerTest {
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences())
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(listOf(movieView))
-            coEvery { mockItemsApi.getItems(any()) } throws ApiClientException("Fetch failed")
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } throws ApiClientException("Fetch failed")
 
             val worker = createWorker()
             val result = worker.doWork()
@@ -466,7 +475,8 @@ class SuggestionsWorkerTest {
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences())
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(listOf(movieView))
-            coEvery { mockItemsApi.getItems(any()) } returns mockQueryResult(emptyList())
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns mockQueryResult(emptyList())
 
             val worker = createWorker()
             val result = worker.doWork()
@@ -483,13 +493,9 @@ class SuggestionsWorkerTest {
 
             every { mockPreferences.data } returns flowOf(mockAppPreferences())
             coEvery { mockUserViewsApi.getUserViews(userId = testUserId) } returns mockQueryResult(listOf(movieView))
-            coEvery { mockItemsApi.getItems(any()) } returns
-                mockk {
-                    every { content } returns
-                        mockk {
-                            every { items } returns null
-                        }
-                }
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns
+                mockQueryResult(emptyList()) as Response<BaseItemDtoQueryResult>
 
             val worker = createWorker()
             val result = worker.doWork()

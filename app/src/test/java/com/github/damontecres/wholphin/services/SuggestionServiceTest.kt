@@ -6,14 +6,18 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.github.damontecres.wholphin.data.ServerRepository
 import com.github.damontecres.wholphin.data.model.JellyfinUser
+import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.Response
+import org.jellyfin.sdk.model.api.BaseItemDto
+import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,6 +26,8 @@ import java.util.UUID
 
 class SuggestionServiceTest {
     private val mockApi = mockk<ApiClient>(relaxed = true)
+
+    // We'll mock GetItemsRequestHandler.execute instead of ItemsApi.getItems
     private val mockServerRepository = mockk<ServerRepository>()
     private val mockCache = mockk<SuggestionsCache>()
     private val mockWorkManager = mockk<WorkManager>()
@@ -33,6 +39,14 @@ class SuggestionServiceTest {
             cache = mockCache,
             workManager = mockWorkManager,
         )
+
+    private fun mockQueryResult(items: List<BaseItemDto>): Response<BaseItemDtoQueryResult> =
+        mockk {
+            every { content } returns
+                mockk {
+                    every { this@mockk.items } returns items
+                }
+        }
 
     private fun mockUser(id: UUID = UUID.randomUUID()): JellyfinUser =
         JellyfinUser(
@@ -46,7 +60,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsEmpty_whenNoUserLoggedIn() =
-        runBlocking {
+        runTest {
             val currentUser = MutableLiveData<JellyfinUser?>(null)
             every { mockServerRepository.currentUser } returns currentUser
             every { mockCache.cacheVersion } returns MutableStateFlow(0L)
@@ -60,7 +74,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerRunning() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -81,7 +95,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerEnqueued() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -102,7 +116,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerSucceeded() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -123,7 +137,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerFailed() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -144,7 +158,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerCancelled() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -165,7 +179,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndNoWorkInfo() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val parentId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -183,7 +197,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_usesCorrectLibraryId() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val movieLibraryId = UUID.randomUUID()
             val tvLibraryId = UUID.randomUUID()
@@ -207,7 +221,7 @@ class SuggestionServiceTest {
 
     @Test
     fun getSuggestionsFlow_usesCorrectItemKind() =
-        runBlocking {
+        runTest {
             val userId = UUID.randomUUID()
             val libraryId = UUID.randomUUID()
             val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
@@ -225,5 +239,37 @@ class SuggestionServiceTest {
             assertEquals(SuggestionsResource.Empty, movieResult)
 
             // SERIES has cached items - verifies correct itemKind is passed to cache.get()
+        }
+
+    @Test
+    fun getSuggestionsFlow_returnsSuccess_whenCacheHasItems() =
+        runTest {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+
+            val cachedId = UUID.randomUUID()
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns CachedSuggestions(listOf(cachedId.toString()))
+
+            val dto =
+                mockk<BaseItemDto> {
+                    every { id } returns cachedId
+                    every { type } returns BaseItemKind.MOVIE
+                }
+            io.mockk.mockkObject(GetItemsRequestHandler)
+            coEvery { GetItemsRequestHandler.execute(mockApi, any()) } returns mockQueryResult(listOf(dto))
+
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+
+            assertTrue(result is SuggestionsResource.Success)
+            val items = (result as SuggestionsResource.Success).items
+            assertEquals(1, items.size)
+            assertEquals(cachedId, items[0].id)
         }
 }

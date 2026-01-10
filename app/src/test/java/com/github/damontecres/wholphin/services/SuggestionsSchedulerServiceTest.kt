@@ -3,6 +3,7 @@ package com.github.damontecres.wholphin.services
 import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.MutableLiveData
@@ -14,6 +15,7 @@ import com.github.damontecres.wholphin.data.CurrentUser
 import com.github.damontecres.wholphin.data.ServerRepository
 import com.github.damontecres.wholphin.data.model.JellyfinServer
 import com.github.damontecres.wholphin.data.model.JellyfinUser
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -60,7 +62,9 @@ class SuggestionsSchedulerServiceTest {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
 
         every { mockActivity.lifecycle } returns lifecycleRegistry
-        every { mockActivity.lifecycleScope } returns testScope as CoroutineScope
+        val mockLifecycleScope = mockk<LifecycleCoroutineScope>(relaxed = true)
+        every { mockLifecycleScope.coroutineContext } returns testScope.coroutineContext
+        every { mockActivity.lifecycleScope } returns mockLifecycleScope
 
         currentLiveData = MutableLiveData(null)
         every { mockServerRepository.current } returns currentLiveData
@@ -106,6 +110,7 @@ class SuggestionsSchedulerServiceTest {
                     context = nonActivityContext,
                     serverRepository = mockServerRepository,
                     cache = mockCache,
+                    workManager = mockWorkManager,
                 )
             }
 
@@ -128,6 +133,7 @@ class SuggestionsSchedulerServiceTest {
                 context = mockActivity,
                 serverRepository = mockServerRepository,
                 cache = mockCache,
+                workManager = mockWorkManager,
             )
 
             verify { mockWorkManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME) }
@@ -150,6 +156,7 @@ class SuggestionsSchedulerServiceTest {
                 context = mockActivity,
                 serverRepository = mockServerRepository,
                 cache = mockCache,
+                workManager = mockWorkManager,
             )
 
             advanceUntilIdle()
@@ -181,6 +188,7 @@ class SuggestionsSchedulerServiceTest {
                 context = mockActivity,
                 serverRepository = mockServerRepository,
                 cache = mockCache,
+                workManager = mockWorkManager,
             )
 
             advanceUntilIdle()
@@ -214,6 +222,7 @@ class SuggestionsSchedulerServiceTest {
                 context = mockActivity,
                 serverRepository = mockServerRepository,
                 cache = mockCache,
+                workManager = mockWorkManager,
             )
 
             advanceUntilIdle()
@@ -236,7 +245,7 @@ class SuggestionsSchedulerServiceTest {
             val userWithServer = mockUser()
             val observerSlot = slot<Observer<CurrentUser?>>()
 
-            every { mockCache.isEmpty() } returns false
+            coEvery { mockCache.isEmpty() } returns false
             every {
                 currentLiveData.observe(any<LifecycleOwner>(), capture(observerSlot))
             } answers {
@@ -248,6 +257,7 @@ class SuggestionsSchedulerServiceTest {
                 context = mockActivity,
                 serverRepository = mockServerRepository,
                 cache = mockCache,
+                workManager = mockWorkManager,
             )
 
             // Verify cancel was called for the first null emission

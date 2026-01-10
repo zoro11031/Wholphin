@@ -116,7 +116,9 @@ class SuggestionsCache
         }
 
         /**
-         * Must be called from a background thread. LRU eviction may trigger synchronous disk I/O.
+         * May perform blocking disk I/O during LRU eviction (via [writeEntryToDisk]) and therefore
+         * must not be called from the main/UI thread. Call this from a background thread or from
+         * a coroutine running on a non-main dispatcher (for example, within [SuggestionsWorker.doWork]).
          */
         fun put(
             userId: UUID,

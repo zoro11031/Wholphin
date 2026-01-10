@@ -30,13 +30,13 @@ class SuggestionsSchedulerService
         @param:ActivityContext private val context: Context,
         private val serverRepository: ServerRepository,
         private val cache: SuggestionsCache,
+        private val workManager: WorkManager,
     ) {
         private val activity =
             (context as? AppCompatActivity)
                 ?: throw IllegalStateException(
                     "SuggestionsSchedulerService requires an AppCompatActivity context, but received: ${context::class.java.name}",
                 )
-        private val workManager = WorkManager.getInstance(context)
 
         init {
             serverRepository.current.observe(activity) { user ->
