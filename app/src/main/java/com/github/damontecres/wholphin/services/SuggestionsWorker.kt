@@ -71,6 +71,7 @@ class SuggestionsWorker
                         .getUserViews(userId = userId)
                         .content.items
                         .orEmpty()
+                var successCount = 0
                 for (view in views) {
                     val itemKind =
                         when (view.collectionType) {
@@ -78,12 +79,22 @@ class SuggestionsWorker
                             CollectionType.TVSHOWS -> BaseItemKind.SERIES
                             else -> continue
                         }
-                    val suggestions = fetchSuggestions(view.id, userId, itemKind, itemsPerRow)
-                    cache.put(userId, view.id, itemKind, suggestions.map { it.id.toString() })
+                    try {
+                        val suggestions = fetchSuggestions(view.id, userId, itemKind, itemsPerRow)
+                        cache.put(userId, view.id, itemKind, suggestions.map { it.id.toString() })
+                        successCount++
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to fetch suggestions for view ${view.id}")
+                    }
                 }
                 cache.save()
-                Timber.d("Completed successfully")
-                return Result.success()
+                return if (successCount > 0) {
+                    Timber.d("Completed with $successCount successful views")
+                    Result.success()
+                } else {
+                    Timber.w("All views failed, scheduling retry")
+                    Result.retry()
+                }
             } catch (_: ApiClientException) {
                 return Result.retry()
             } catch (e: Exception) {
