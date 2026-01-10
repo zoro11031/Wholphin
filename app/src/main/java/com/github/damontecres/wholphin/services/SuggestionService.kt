@@ -42,47 +42,38 @@ class SuggestionService
             parentId: UUID,
             itemKind: BaseItemKind,
         ): Flow<SuggestionsResource> {
-            // Derive a flow of (cachedIds, isWorkerActive) that emits when cache or worker state changes
-            val stateFlow =
+            // Combine triggers (cache version + work info updates) but perform suspend cache lookups
+            val triggers =
                 combine(
                     cache.cacheVersion,
                     workManager.getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME),
-                ) { _, workInfos ->
-                    val userId = serverRepository.currentUser.value?.id
-                    val cachedIds =
-                        if (userId != null) {
-                            cache.get(userId, parentId, itemKind)?.ids.orEmpty()
-                        } else {
-                            emptyList()
-                        }
-                    val isWorkerActive =
-                        workInfos.any {
-                            it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
-                        }
-                    Triple(userId, cachedIds, isWorkerActive)
-                }
+                ) { _, workInfos -> workInfos }
 
-            // Only re-fetch when cachedIds actually changes, not on every WorkInfo update
-            return stateFlow
-                .distinctUntilChanged { old, new -> old.second == new.second }
-                .flatMapLatest { (userId, cachedIds, isWorkerActive) ->
+            return triggers
+                .flatMapLatest { workInfos ->
                     flow {
-                        when {
-                            userId == null -> {
-                                emit(SuggestionsResource.Empty)
+                        val userId = serverRepository.currentUser.value?.id
+                        if (userId == null) {
+                            emit(SuggestionsResource.Empty)
+                            return@flow
+                        }
+
+                        val cachedIds = cache.get(userId, parentId, itemKind)?.ids.orEmpty()
+
+                        if (cachedIds.isNotEmpty()) {
+                            emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
+                            return@flow
+                        }
+
+                        val isWorkerActive =
+                            workInfos.any {
+                                it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
                             }
 
-                            cachedIds.isNotEmpty() -> {
-                                emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
-                            }
-
-                            isWorkerActive -> {
-                                emit(SuggestionsResource.Loading)
-                            }
-
-                            else -> {
-                                emit(SuggestionsResource.Empty)
-                            }
+                        if (isWorkerActive) {
+                            emit(SuggestionsResource.Loading)
+                        } else {
+                            emit(SuggestionsResource.Empty)
                         }
                     }
                 }.distinctUntilChanged()

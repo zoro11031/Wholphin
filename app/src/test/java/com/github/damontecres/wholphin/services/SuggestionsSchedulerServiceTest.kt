@@ -139,7 +139,7 @@ class SuggestionsSchedulerServiceTest {
             val userWithServer = mockUser()
             val observerSlot = slot<Observer<CurrentUser?>>()
 
-            every { mockCache.isEmpty() } returns false
+            coEvery { mockCache.isEmpty() } returns false
             every {
                 currentLiveData.observe(any<LifecycleOwner>(), capture(observerSlot))
             } answers {
@@ -170,7 +170,7 @@ class SuggestionsSchedulerServiceTest {
             val userWithServer = mockUser()
             val observerSlot = slot<Observer<CurrentUser?>>()
 
-            every { mockCache.isEmpty() } returns true
+            coEvery { mockCache.isEmpty() } returns true
             every {
                 currentLiveData.observe(any<LifecycleOwner>(), capture(observerSlot))
             } answers {
@@ -203,7 +203,7 @@ class SuggestionsSchedulerServiceTest {
             val userWithServer = mockUser()
             val observerSlot = slot<Observer<CurrentUser?>>()
 
-            every { mockCache.isEmpty() } returns false
+            coEvery { mockCache.isEmpty() } returns false
             every {
                 currentLiveData.observe(any<LifecycleOwner>(), capture(observerSlot))
             } answers {
