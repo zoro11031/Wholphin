@@ -115,6 +115,9 @@ class SuggestionsCache
             }
         }
 
+        /**
+         * Must be called from a background thread. LRU eviction may trigger synchronous disk I/O.
+         */
         fun put(
             userId: UUID,
             libraryId: UUID,
