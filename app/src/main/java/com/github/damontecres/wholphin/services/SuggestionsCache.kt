@@ -128,9 +128,11 @@ class SuggestionsCache
         ) {
             val key = cacheKey(userId, libraryId, itemKind)
             val cached = CachedSuggestions(ids)
-            memoryCache[key] = cached
-            dirtyKeys.add(key)
-            _cacheVersion.update { it + 1 }
+            synchronized(dirtyKeys) {
+                memoryCache[key] = cached
+                dirtyKeys.add(key)
+                _cacheVersion.update { it + 1 }
+            }
         }
 
         suspend fun isEmpty(): Boolean {

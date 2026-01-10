@@ -34,6 +34,7 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.CollectionType
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -71,6 +72,11 @@ class SuggestionsWorkerTest {
 
         every { mockCache.put(any(), any(), any(), any()) } just Runs
         coEvery { mockCache.save() } just Runs
+    }
+
+    @After
+    fun tearDown() {
+        io.mockk.unmockkObject(GetItemsRequestHandler)
     }
 
     private fun createWorker(
