@@ -26,12 +26,13 @@ class SuggestionServiceTest {
     private val mockCache = mockk<SuggestionsCache>()
     private val mockWorkManager = mockk<WorkManager>()
 
-    private fun createService() = SuggestionService(
-        api = mockApi,
-        serverRepository = mockServerRepository,
-        cache = mockCache,
-        workManager = mockWorkManager,
-    )
+    private fun createService() =
+        SuggestionService(
+            api = mockApi,
+            serverRepository = mockServerRepository,
+            cache = mockCache,
+            workManager = mockWorkManager,
+        )
 
     private fun mockUser(id: UUID = UUID.randomUUID()): JellyfinUser =
         JellyfinUser(
@@ -41,175 +42,188 @@ class SuggestionServiceTest {
             accessToken = "token",
         )
 
-    private fun mockWorkInfo(state: WorkInfo.State): WorkInfo =
-        mockk<WorkInfo> { every { this@mockk.state } returns state }
+    private fun mockWorkInfo(state: WorkInfo.State): WorkInfo = mockk<WorkInfo> { every { this@mockk.state } returns state }
 
     @Test
-    fun getSuggestionsFlow_returnsEmpty_whenNoUserLoggedIn() = runBlocking {
-        val currentUser = MutableLiveData<JellyfinUser?>(null)
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+    fun getSuggestionsFlow_returnsEmpty_whenNoUserLoggedIn() =
+        runBlocking {
+            val currentUser = MutableLiveData<JellyfinUser?>(null)
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
 
-        val service = createService()
-        val result = service.getSuggestionsFlow(UUID.randomUUID(), BaseItemKind.MOVIE).first()
+            val service = createService()
+            val result = service.getSuggestionsFlow(UUID.randomUUID(), BaseItemKind.MOVIE).first()
 
-        assertEquals(SuggestionsResource.Empty, result)
-    }
-
-    @Test
-    fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerRunning() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
-
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(
-            listOf(mockWorkInfo(WorkInfo.State.RUNNING))
-        )
-
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
-
-        assertEquals(SuggestionsResource.Loading, result)
-    }
+            assertEquals(SuggestionsResource.Empty, result)
+        }
 
     @Test
-    fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerEnqueued() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+    fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerRunning() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
 
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(
-            listOf(mockWorkInfo(WorkInfo.State.ENQUEUED))
-        )
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns
+                flowOf(
+                    listOf(mockWorkInfo(WorkInfo.State.RUNNING)),
+                )
 
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
 
-        assertEquals(SuggestionsResource.Loading, result)
-    }
-
-    @Test
-    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerSucceeded() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
-
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(
-            listOf(mockWorkInfo(WorkInfo.State.SUCCEEDED))
-        )
-
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
-
-        assertEquals(SuggestionsResource.Empty, result)
-    }
+            assertEquals(SuggestionsResource.Loading, result)
+        }
 
     @Test
-    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerFailed() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+    fun getSuggestionsFlow_returnsLoading_whenCacheEmptyAndWorkerEnqueued() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
 
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(
-            listOf(mockWorkInfo(WorkInfo.State.FAILED))
-        )
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns
+                flowOf(
+                    listOf(mockWorkInfo(WorkInfo.State.ENQUEUED)),
+                )
 
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
 
-        assertEquals(SuggestionsResource.Empty, result)
-    }
-
-    @Test
-    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerCancelled() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
-
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(
-            listOf(mockWorkInfo(WorkInfo.State.CANCELLED))
-        )
-
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
-
-        assertEquals(SuggestionsResource.Empty, result)
-    }
+            assertEquals(SuggestionsResource.Loading, result)
+        }
 
     @Test
-    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndNoWorkInfo() = runBlocking {
-        val userId = UUID.randomUUID()
-        val parentId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerSucceeded() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
 
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns
+                flowOf(
+                    listOf(mockWorkInfo(WorkInfo.State.SUCCEEDED)),
+                )
 
-        val service = createService()
-        val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
 
-        assertEquals(SuggestionsResource.Empty, result)
-    }
-
-    @Test
-    fun getSuggestionsFlow_usesCorrectLibraryId() = runBlocking {
-        val userId = UUID.randomUUID()
-        val movieLibraryId = UUID.randomUUID()
-        val tvLibraryId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
-
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, movieLibraryId, BaseItemKind.MOVIE) } returns null
-        coEvery { mockCache.get(userId, tvLibraryId, BaseItemKind.MOVIE) } returns
-            CachedSuggestions(listOf("item-1"))
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
-
-        val service = createService()
-
-        val movieResult = service.getSuggestionsFlow(movieLibraryId, BaseItemKind.MOVIE).first()
-        assertEquals(SuggestionsResource.Empty, movieResult)
-
-        // TV library has cached items - would return Success if API was mocked
-        // This test verifies the correct libraryId is passed to cache.get()
-    }
+            assertEquals(SuggestionsResource.Empty, result)
+        }
 
     @Test
-    fun getSuggestionsFlow_usesCorrectItemKind() = runBlocking {
-        val userId = UUID.randomUUID()
-        val libraryId = UUID.randomUUID()
-        val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerFailed() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
 
-        every { mockServerRepository.currentUser } returns currentUser
-        every { mockCache.cacheVersion } returns MutableStateFlow(0L)
-        coEvery { mockCache.get(userId, libraryId, BaseItemKind.MOVIE) } returns null
-        coEvery { mockCache.get(userId, libraryId, BaseItemKind.SERIES) } returns
-            CachedSuggestions(listOf("series-1"))
-        every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns
+                flowOf(
+                    listOf(mockWorkInfo(WorkInfo.State.FAILED)),
+                )
 
-        val service = createService()
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
 
-        val movieResult = service.getSuggestionsFlow(libraryId, BaseItemKind.MOVIE).first()
-        assertEquals(SuggestionsResource.Empty, movieResult)
+            assertEquals(SuggestionsResource.Empty, result)
+        }
 
-        // SERIES has cached items - verifies correct itemKind is passed to cache.get()
-    }
+    @Test
+    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndWorkerCancelled() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns
+                flowOf(
+                    listOf(mockWorkInfo(WorkInfo.State.CANCELLED)),
+                )
+
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+
+            assertEquals(SuggestionsResource.Empty, result)
+        }
+
+    @Test
+    fun getSuggestionsFlow_returnsEmpty_whenCacheEmptyAndNoWorkInfo() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val parentId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, parentId, BaseItemKind.MOVIE) } returns null
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+
+            val service = createService()
+            val result = service.getSuggestionsFlow(parentId, BaseItemKind.MOVIE).first()
+
+            assertEquals(SuggestionsResource.Empty, result)
+        }
+
+    @Test
+    fun getSuggestionsFlow_usesCorrectLibraryId() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val movieLibraryId = UUID.randomUUID()
+            val tvLibraryId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, movieLibraryId, BaseItemKind.MOVIE) } returns null
+            coEvery { mockCache.get(userId, tvLibraryId, BaseItemKind.MOVIE) } returns
+                CachedSuggestions(listOf("item-1"))
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+
+            val service = createService()
+
+            val movieResult = service.getSuggestionsFlow(movieLibraryId, BaseItemKind.MOVIE).first()
+            assertEquals(SuggestionsResource.Empty, movieResult)
+
+            // TV library has cached items - would return Success if API was mocked
+            // This test verifies the correct libraryId is passed to cache.get()
+        }
+
+    @Test
+    fun getSuggestionsFlow_usesCorrectItemKind() =
+        runBlocking {
+            val userId = UUID.randomUUID()
+            val libraryId = UUID.randomUUID()
+            val currentUser = MutableLiveData<JellyfinUser?>(mockUser(userId))
+
+            every { mockServerRepository.currentUser } returns currentUser
+            every { mockCache.cacheVersion } returns MutableStateFlow(0L)
+            coEvery { mockCache.get(userId, libraryId, BaseItemKind.MOVIE) } returns null
+            coEvery { mockCache.get(userId, libraryId, BaseItemKind.SERIES) } returns
+                CachedSuggestions(listOf("series-1"))
+            every { mockWorkManager.getWorkInfosForUniqueWorkFlow(any()) } returns flowOf(emptyList())
+
+            val service = createService()
+
+            val movieResult = service.getSuggestionsFlow(libraryId, BaseItemKind.MOVIE).first()
+            assertEquals(SuggestionsResource.Empty, movieResult)
+
+            // SERIES has cached items - verifies correct itemKind is passed to cache.get()
+        }
 }

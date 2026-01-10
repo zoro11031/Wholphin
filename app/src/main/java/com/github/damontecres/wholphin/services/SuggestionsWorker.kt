@@ -61,17 +61,23 @@ class SuggestionsWorker
 
             try {
                 val prefs = preferences.data.firstOrNull() ?: AppPreferences.getDefaultInstance()
-                val itemsPerRow = prefs.homePagePreferences.maxItemsPerRow
-                    .takeIf { it > 0 }
-                    ?: AppPreference.HomePageItems.defaultValue.toInt()
+                val itemsPerRow =
+                    prefs.homePagePreferences.maxItemsPerRow
+                        .takeIf { it > 0 }
+                        ?: AppPreference.HomePageItems.defaultValue.toInt()
 
-                val views = api.userViewsApi.getUserViews(userId = userId).content.items.orEmpty()
+                val views =
+                    api.userViewsApi
+                        .getUserViews(userId = userId)
+                        .content.items
+                        .orEmpty()
                 for (view in views) {
-                    val itemKind = when (view.collectionType) {
-                        CollectionType.MOVIES -> BaseItemKind.MOVIE
-                        CollectionType.TVSHOWS -> BaseItemKind.SERIES
-                        else -> continue
-                    }
+                    val itemKind =
+                        when (view.collectionType) {
+                            CollectionType.MOVIES -> BaseItemKind.MOVIE
+                            CollectionType.TVSHOWS -> BaseItemKind.SERIES
+                            else -> continue
+                        }
                     val suggestions = fetchSuggestions(view.id, userId, itemKind, itemsPerRow)
                     cache.put(userId, view.id, itemKind, suggestions.map { it.id.toString() })
                 }

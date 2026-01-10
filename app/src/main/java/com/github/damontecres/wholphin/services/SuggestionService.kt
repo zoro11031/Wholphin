@@ -8,6 +8,9 @@ import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
@@ -38,31 +41,52 @@ class SuggestionService
         fun getSuggestionsFlow(
             parentId: UUID,
             itemKind: BaseItemKind,
-        ): Flow<SuggestionsResource> =
-            combine(
-                cache.cacheVersion,
-                workManager.getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME),
-            ) { _, workInfos ->
-                val userId =
-                    serverRepository.currentUser.value?.id
-                        ?: return@combine SuggestionsResource.Empty
-
-                val cachedIds = cache.get(userId, parentId, itemKind)?.ids.orEmpty()
-
-                if (cachedIds.isNotEmpty()) {
-                    SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind))
-                } else {
+        ): Flow<SuggestionsResource> {
+            // Derive a flow of (cachedIds, isWorkerActive) that emits when cache or worker state changes
+            val stateFlow =
+                combine(
+                    cache.cacheVersion,
+                    workManager.getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME),
+                ) { _, workInfos ->
+                    val userId = serverRepository.currentUser.value?.id
+                    val cachedIds =
+                        if (userId != null) {
+                            cache.get(userId, parentId, itemKind)?.ids.orEmpty()
+                        } else {
+                            emptyList()
+                        }
                     val isWorkerActive =
                         workInfos.any {
                             it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
                         }
-                    if (isWorkerActive) {
-                        SuggestionsResource.Loading
-                    } else {
-                        SuggestionsResource.Empty
-                    }
+                    Triple(userId, cachedIds, isWorkerActive)
                 }
-            }.distinctUntilChanged()
+
+            // Only re-fetch when cachedIds actually changes, not on every WorkInfo update
+            return stateFlow
+                .distinctUntilChanged { old, new -> old.second == new.second }
+                .flatMapLatest { (userId, cachedIds, isWorkerActive) ->
+                    flow {
+                        when {
+                            userId == null -> {
+                                emit(SuggestionsResource.Empty)
+                            }
+
+                            cachedIds.isNotEmpty() -> {
+                                emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
+                            }
+
+                            isWorkerActive -> {
+                                emit(SuggestionsResource.Loading)
+                            }
+
+                            else -> {
+                                emit(SuggestionsResource.Empty)
+                            }
+                        }
+                    }
+                }.distinctUntilChanged()
+        }
 
         private suspend fun fetchItemsByIds(
             ids: List<String>,
