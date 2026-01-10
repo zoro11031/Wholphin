@@ -3,6 +3,10 @@ package com.github.damontecres.wholphin.services
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -26,6 +30,8 @@ class SuggestionsCache
         @ApplicationContext private val context: Context,
     ) {
         private val json = Json { ignoreUnknownKeys = true }
+        private val _cacheVersion = MutableStateFlow(0L)
+        val cacheVersion: StateFlow<Long> = _cacheVersion.asStateFlow()
 
         private val memoryCache: MutableMap<String, CachedSuggestions> =
             Collections.synchronizedMap(
@@ -119,6 +125,12 @@ class SuggestionsCache
             val cached = CachedSuggestions(ids)
             memoryCache[key] = cached
             dirtyKeys.add(key)
+            _cacheVersion.update { it + 1 }
+        }
+
+        suspend fun isEmpty(): Boolean {
+            loadFromDisk()
+            return memoryCache.isEmpty()
         }
 
         suspend fun save() {
