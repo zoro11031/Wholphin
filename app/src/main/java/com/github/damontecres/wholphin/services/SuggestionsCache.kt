@@ -77,7 +77,7 @@ class SuggestionsCache
         private suspend fun loadFromDisk() {
             if (diskCacheLoaded) return
             withContext(Dispatchers.IO) {
-                synchronized(this@SuggestionsCache) {
+                synchronized(lock) {
                     if (diskCacheLoaded) return@withContext
                     val suggestionsDir = cacheDir
                     if (!suggestionsDir.exists()) {
@@ -136,25 +136,28 @@ class SuggestionsCache
             }
         }
 
-        suspend fun isEmpty(): Boolean = withContext(Dispatchers.IO) {
-            synchronized(lock) {
-                if (memoryCache.isNotEmpty() || dirtyKeys.isNotEmpty()) {
-                    return@synchronized false
+        suspend fun isEmpty(): Boolean =
+            withContext(Dispatchers.IO) {
+                synchronized(lock) {
+                    if (memoryCache.isNotEmpty() || dirtyKeys.isNotEmpty()) {
+                        return@synchronized false
+                    }
+                    val files = cacheDir.listFiles()
+                    files == null || files.isEmpty()
                 }
-                val files = cacheDir.listFiles()
-                files == null || files.isEmpty()
             }
-        }
 
         suspend fun save() {
-            val entriesToSave = synchronized(lock) {
-                if (dirtyKeys.isEmpty()) return
-                val entries = dirtyKeys.mapNotNull { key ->
-                    memoryCache[key]?.let { key to it }
+            val entriesToSave =
+                synchronized(lock) {
+                    if (dirtyKeys.isEmpty()) return
+                    val entries =
+                        dirtyKeys.mapNotNull { key ->
+                            memoryCache[key]?.let { key to it }
+                        }
+                    dirtyKeys.clear()
+                    entries
                 }
-                dirtyKeys.clear()
-                entries
-            }
 
             withContext(Dispatchers.IO) {
                 val suggestionsDir =

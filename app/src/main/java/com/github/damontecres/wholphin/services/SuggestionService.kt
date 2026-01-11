@@ -6,10 +6,11 @@ import com.github.damontecres.wholphin.data.ServerRepository
 import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.util.GetItemsRequestHandler
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
@@ -42,46 +43,33 @@ class SuggestionService
             parentId: UUID,
             itemKind: BaseItemKind,
         ): Flow<SuggestionsResource> {
-            // Combine triggers (cache version + work info updates) but perform suspend cache lookups
-            val triggers =
-                combine(
-                    cache.cacheVersion,
-                    workManager.getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME),
-                ) { _, workInfos -> workInfos }
+            val userId = serverRepository.currentUser.value?.id ?: return flowOf(SuggestionsResource.Empty)
 
-            return triggers
-                .flatMapLatest { workInfos ->
-                    flow {
-                        val userId = serverRepository.currentUser.value?.id
-                        if (userId == null) {
-                            emit(SuggestionsResource.Empty)
-                            return@flow
-                        }
-
-                        val cachedIds = cache.get(userId, parentId, itemKind)?.ids.orEmpty()
-
-                        if (cachedIds.isNotEmpty()) {
+            return cache.cacheVersion
+                .map { cache.get(userId, parentId, itemKind)?.ids.orEmpty() }
+                .distinctUntilChanged()
+                .flatMapLatest { cachedIds ->
+                    if (cachedIds.isNotEmpty()) {
+                        flow {
                             try {
                                 emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
                             } catch (e: Exception) {
-                                Timber.e(e, "Failed to fetch items for suggestions")
+                                Timber.e(e, "Failed to fetch items")
                                 emit(SuggestionsResource.Empty)
                             }
-                            return@flow
                         }
-
-                        val isWorkerActive =
-                            workInfos.any {
-                                it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                    } else {
+                        workManager
+                            .getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME)
+                            .map { workInfos ->
+                                val isActive =
+                                    workInfos.any {
+                                        it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                                    }
+                                if (isActive) SuggestionsResource.Loading else SuggestionsResource.Empty
                             }
-
-                        if (isWorkerActive) {
-                            emit(SuggestionsResource.Loading)
-                        } else {
-                            emit(SuggestionsResource.Empty)
-                        }
                     }
-                }.distinctUntilChanged()
+                }
         }
 
         private suspend fun fetchItemsByIds(
