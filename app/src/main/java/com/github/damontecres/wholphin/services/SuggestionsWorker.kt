@@ -13,8 +13,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.supervisorScope
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.userViewsApi
@@ -74,24 +77,29 @@ class SuggestionsWorker
                 if (views.isEmpty()) {
                     return Result.success()
                 }
-                var successCount = 0
-                var failureCount = 0
-                for (view in views) {
-                    val itemKind =
-                        when (view.collectionType) {
-                            CollectionType.MOVIES -> BaseItemKind.MOVIE
-                            CollectionType.TVSHOWS -> BaseItemKind.SERIES
-                            else -> continue
-                        }
-                    try {
-                        val suggestions = fetchSuggestions(view.id, userId, itemKind, itemsPerRow)
-                        cache.put(userId, view.id, itemKind, suggestions.map { it.id.toString() })
-                        successCount++
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to fetch suggestions for view ${view.id}")
-                        failureCount++
+                val results =
+                    supervisorScope {
+                        views
+                            .mapNotNull { view ->
+                                val itemKind =
+                                    when (view.collectionType) {
+                                        CollectionType.MOVIES -> BaseItemKind.MOVIE
+                                        CollectionType.TVSHOWS -> BaseItemKind.SERIES
+                                        else -> return@mapNotNull null
+                                    }
+                                async(Dispatchers.IO) {
+                                    ensureActive()
+                                    runCatching {
+                                        val suggestions = fetchSuggestions(view.id, userId, itemKind, itemsPerRow)
+                                        cache.put(userId, view.id, itemKind, suggestions.map { it.id.toString() })
+                                    }.onFailure { e ->
+                                        Timber.e(e, "Failed to fetch suggestions for view ${view.id}")
+                                    }
+                                }
+                            }.awaitAll()
                     }
-                }
+                val successCount = results.count { it.isSuccess }
+                val failureCount = results.count { it.isFailure }
                 cache.save()
                 if (failureCount > 0 && successCount == 0) {
                     Timber.w("All attempts failed ($failureCount views), scheduling retry")
