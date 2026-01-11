@@ -136,32 +136,35 @@ class SuggestionsCache
             }
         }
 
-        suspend fun isEmpty(): Boolean {
+        suspend fun isEmpty(): Boolean = withContext(Dispatchers.IO) {
             synchronized(lock) {
                 if (memoryCache.isNotEmpty() || dirtyKeys.isNotEmpty()) {
-                    return false
+                    return@synchronized false
                 }
-            }
-            return withContext(Dispatchers.IO) {
                 val files = cacheDir.listFiles()
                 files == null || files.isEmpty()
             }
         }
 
         suspend fun save() {
-            if (dirtyKeys.isEmpty()) return
-            val toSave = synchronized(lock) { dirtyKeys.toList().also { dirtyKeys.clear() } }
+            val entriesToSave = synchronized(lock) {
+                if (dirtyKeys.isEmpty()) return
+                val entries = dirtyKeys.mapNotNull { key ->
+                    memoryCache[key]?.let { key to it }
+                }
+                dirtyKeys.clear()
+                entries
+            }
+
             withContext(Dispatchers.IO) {
                 val suggestionsDir =
                     cacheDir.apply {
                         if (!mkdirs() && !exists()) Timber.w("Failed to create suggestions cache directory")
                     }
-                toSave.forEach { key ->
-                    memoryCache[key]?.let { cached ->
-                        runCatching {
-                            File(suggestionsDir, "$key.json").writeText(json.encodeToString(cached))
-                        }.onFailure { Timber.w(it, "Failed to write cache: $key") }
-                    }
+                entriesToSave.forEach { (key, value) ->
+                    runCatching {
+                        File(suggestionsDir, "$key.json").writeText(json.encodeToString(value))
+                    }.onFailure { Timber.w(it, "Failed to write cache: $key") }
                 }
             }
         }
