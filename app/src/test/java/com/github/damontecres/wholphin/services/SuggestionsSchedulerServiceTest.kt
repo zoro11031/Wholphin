@@ -51,10 +51,11 @@ class SuggestionsSchedulerServiceTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
 
-        lifecycleOwner = object : LifecycleOwner {
-            override val lifecycle: Lifecycle
-                get() = lifecycleRegistry
-        }
+        lifecycleOwner =
+            object : LifecycleOwner {
+                override val lifecycle: Lifecycle
+                    get() = lifecycleRegistry
+            }
         lifecycleRegistry = LifecycleRegistry(lifecycleOwner)
 
         mockActivity = spyk(mockk<AppCompatActivity>(relaxed = true))

@@ -137,13 +137,20 @@ class SuggestionsCache
         }
 
         suspend fun isEmpty(): Boolean {
-            loadFromDisk()
-            return memoryCache.isEmpty()
+            synchronized(lock) {
+                if (memoryCache.isNotEmpty() || dirtyKeys.isNotEmpty()) {
+                    return false
+                }
+            }
+            return withContext(Dispatchers.IO) {
+                val files = cacheDir.listFiles()
+                files == null || files.isEmpty()
+            }
         }
 
         suspend fun save() {
             if (dirtyKeys.isEmpty()) return
-            val toSave = synchronized(dirtyKeys) { dirtyKeys.toList().also { dirtyKeys.clear() } }
+            val toSave = synchronized(lock) { dirtyKeys.toList().also { dirtyKeys.clear() } }
             withContext(Dispatchers.IO) {
                 val suggestionsDir =
                     cacheDir.apply {
