@@ -42,10 +42,21 @@ class SuggestionsSchedulerService
 
         internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
 
+        private var scheduledUserId: UUID? = null
+        private var scheduledServerId: UUID? = null
+
         init {
             serverRepository.current.observe(activity) { user ->
-                workManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME)
-                if (user != null) {
+                if (user == null) {
+                    if (scheduledUserId != null) {
+                        workManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME)
+                        scheduledUserId = null
+                        scheduledServerId = null
+                    }
+                } else if (user.user.id != scheduledUserId || user.server.id != scheduledServerId) {
+                    workManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME)
+                    scheduledUserId = user.user.id
+                    scheduledServerId = user.server.id
                     activity.lifecycleScope.launch(dispatcher + ExceptionHandler()) {
                         scheduleWork(user.user.id, user.server.id)
                     }
@@ -88,7 +99,7 @@ class SuggestionsSchedulerService
                         repeatInterval = 12.hours.toJavaDuration(),
                     ).setConstraints(constraints)
                         .setBackoffCriteria(
-                            BackoffPolicy.LINEAR,
+                            BackoffPolicy.EXPONENTIAL,
                             15.minutes.toJavaDuration(),
                         ).setInputData(inputData)
                         .build(),

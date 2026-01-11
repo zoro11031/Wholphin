@@ -44,7 +44,8 @@ class SuggestionService
             parentId: UUID,
             itemKind: BaseItemKind,
         ): Flow<SuggestionsResource> {
-            return serverRepository.currentUser.asFlow()
+            return serverRepository.currentUser
+                .asFlow()
                 .flatMapLatest { user ->
                     val userId = user?.id ?: return@flatMapLatest flowOf(SuggestionsResource.Empty)
 
