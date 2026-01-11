@@ -1,5 +1,6 @@
 package com.github.damontecres.wholphin.services
 
+import androidx.lifecycle.asFlow
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.github.damontecres.wholphin.data.ServerRepository
@@ -43,32 +44,35 @@ class SuggestionService
             parentId: UUID,
             itemKind: BaseItemKind,
         ): Flow<SuggestionsResource> {
-            val userId = serverRepository.currentUser.value?.id ?: return flowOf(SuggestionsResource.Empty)
+            return serverRepository.currentUser.asFlow()
+                .flatMapLatest { user ->
+                    val userId = user?.id ?: return@flatMapLatest flowOf(SuggestionsResource.Empty)
 
-            return cache.cacheVersion
-                .map { cache.get(userId, parentId, itemKind)?.ids.orEmpty() }
-                .distinctUntilChanged()
-                .flatMapLatest { cachedIds ->
-                    if (cachedIds.isNotEmpty()) {
-                        flow {
-                            try {
-                                emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
-                            } catch (e: Exception) {
-                                Timber.e(e, "Failed to fetch items")
-                                emit(SuggestionsResource.Empty)
+                    cache.cacheVersion
+                        .map { cache.get(userId, parentId, itemKind)?.ids.orEmpty() }
+                        .distinctUntilChanged()
+                        .flatMapLatest { cachedIds ->
+                            if (cachedIds.isNotEmpty()) {
+                                flow {
+                                    try {
+                                        emit(SuggestionsResource.Success(fetchItemsByIds(cachedIds, itemKind)))
+                                    } catch (e: Exception) {
+                                        Timber.e(e, "Failed to fetch items")
+                                        emit(SuggestionsResource.Empty)
+                                    }
+                                }
+                            } else {
+                                workManager
+                                    .getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME)
+                                    .map { workInfos ->
+                                        val isActive =
+                                            workInfos.any {
+                                                it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                                            }
+                                        if (isActive) SuggestionsResource.Loading else SuggestionsResource.Empty
+                                    }
                             }
                         }
-                    } else {
-                        workManager
-                            .getWorkInfosForUniqueWorkFlow(SuggestionsWorker.WORK_NAME)
-                            .map { workInfos ->
-                                val isActive =
-                                    workInfos.any {
-                                        it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
-                                    }
-                                if (isActive) SuggestionsResource.Loading else SuggestionsResource.Empty
-                            }
-                    }
                 }
         }
 
