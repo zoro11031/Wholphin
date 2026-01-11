@@ -75,6 +75,7 @@ class SuggestionsWorker
                     return Result.success()
                 }
                 var successCount = 0
+                var failureCount = 0
                 for (view in views) {
                     val itemKind =
                         when (view.collectionType) {
@@ -88,16 +89,16 @@ class SuggestionsWorker
                         successCount++
                     } catch (e: Exception) {
                         Timber.e(e, "Failed to fetch suggestions for view ${view.id}")
+                        failureCount++
                     }
                 }
                 cache.save()
-                return if (successCount > 0) {
-                    Timber.d("Completed with $successCount successful views")
-                    Result.success()
-                } else {
-                    Timber.w("All views failed, scheduling retry")
-                    Result.retry()
+                if (failureCount > 0 && successCount == 0) {
+                    Timber.w("All attempts failed ($failureCount views), scheduling retry")
+                    return Result.retry()
                 }
+                Timber.d("Completed with $successCount successes and $failureCount failures")
+                return Result.success()
             } catch (_: ApiClientException) {
                 return Result.retry()
             } catch (e: Exception) {

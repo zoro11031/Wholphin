@@ -160,8 +160,10 @@ class SuggestionsCache
         }
 
         suspend fun clear() {
-            memoryCache.clear()
-            dirtyKeys.clear()
+            synchronized(lock) {
+                memoryCache.clear()
+                dirtyKeys.clear()
+            }
             diskCacheLoaded = false
             withContext(Dispatchers.IO) {
                 runCatching { cacheDir.deleteRecursively() }

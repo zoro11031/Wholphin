@@ -102,6 +102,14 @@ class SuggestionsSchedulerServiceTest {
         return CurrentUser(user = user, server = server)
     }
 
+    private fun createService(): SuggestionsSchedulerService =
+        SuggestionsSchedulerService(
+            context = mockActivity,
+            serverRepository = mockServerRepository,
+            cache = mockCache,
+            workManager = mockWorkManager,
+        ).also { it.dispatcher = testDispatcher }
+
     @Test
     fun constructor_throwsIllegalStateException_whenContextIsNotAppCompatActivity() {
         val nonActivityContext = mockk<Context>(relaxed = true)
@@ -122,14 +130,10 @@ class SuggestionsSchedulerServiceTest {
     @Test
     fun init_cancelsWork_whenUserChangesToNull() =
         runTest {
-            SuggestionsSchedulerService(
-                context = mockActivity,
-                serverRepository = mockServerRepository,
-                cache = mockCache,
-                workManager = mockWorkManager,
-            )
+            createService()
 
             currentLiveData.value = null
+            advanceUntilIdle()
 
             verify { mockWorkManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME) }
         }
@@ -141,12 +145,7 @@ class SuggestionsSchedulerServiceTest {
 
             coEvery { mockCache.isEmpty() } returns false
 
-            SuggestionsSchedulerService(
-                context = mockActivity,
-                serverRepository = mockServerRepository,
-                cache = mockCache,
-                workManager = mockWorkManager,
-            )
+            createService()
 
             currentLiveData.value = userWithServer
             advanceUntilIdle()
@@ -168,12 +167,7 @@ class SuggestionsSchedulerServiceTest {
 
             coEvery { mockCache.isEmpty() } returns true
 
-            SuggestionsSchedulerService(
-                context = mockActivity,
-                serverRepository = mockServerRepository,
-                cache = mockCache,
-                workManager = mockWorkManager,
-            )
+            createService()
 
             currentLiveData.value = userWithServer
             advanceUntilIdle()
@@ -195,12 +189,7 @@ class SuggestionsSchedulerServiceTest {
 
             coEvery { mockCache.isEmpty() } returns false
 
-            SuggestionsSchedulerService(
-                context = mockActivity,
-                serverRepository = mockServerRepository,
-                cache = mockCache,
-                workManager = mockWorkManager,
-            )
+            createService()
 
             currentLiveData.value = userWithServer
             advanceUntilIdle()
@@ -222,14 +211,10 @@ class SuggestionsSchedulerServiceTest {
 
             coEvery { mockCache.isEmpty() } returns false
 
-            SuggestionsSchedulerService(
-                context = mockActivity,
-                serverRepository = mockServerRepository,
-                cache = mockCache,
-                workManager = mockWorkManager,
-            )
+            createService()
 
             currentLiveData.value = null
+            advanceUntilIdle()
             verify(atLeast = 1) { mockWorkManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME) }
 
             currentLiveData.value = userWithServer

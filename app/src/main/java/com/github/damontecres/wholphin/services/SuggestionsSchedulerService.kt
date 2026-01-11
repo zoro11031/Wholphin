@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.work.BackoffPolicy
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -12,7 +15,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.github.damontecres.wholphin.data.ServerRepository
-import com.github.damontecres.wholphin.ui.launchIO
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import dagger.hilt.android.qualifiers.ActivityContext
 import dagger.hilt.android.scopes.ActivityScoped
@@ -38,11 +40,13 @@ class SuggestionsSchedulerService
                     "SuggestionsSchedulerService requires an AppCompatActivity context, but received: ${context::class.java.name}",
                 )
 
+        internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
+
         init {
             serverRepository.current.observe(activity) { user ->
                 workManager.cancelUniqueWork(SuggestionsWorker.WORK_NAME)
                 if (user != null) {
-                    activity.lifecycleScope.launchIO(ExceptionHandler()) {
+                    activity.lifecycleScope.launch(dispatcher + ExceptionHandler()) {
                         scheduleWork(user.user.id, user.server.id)
                     }
                 }
