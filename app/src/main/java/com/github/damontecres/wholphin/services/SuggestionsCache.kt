@@ -176,6 +176,7 @@ class SuggestionsCache
             synchronized(lock) {
                 memoryCache.clear()
                 dirtyKeys.clear()
+                _cacheVersion.update { it + 1 }
             }
             diskCacheLoaded = false
             withContext(Dispatchers.IO) {
