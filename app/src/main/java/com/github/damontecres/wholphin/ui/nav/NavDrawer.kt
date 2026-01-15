@@ -759,4 +759,4 @@ fun navItemColor(
     }
 }
 
-val DrawerState.isOpen: Boolean get() = this.currentValue == DrawerValue.Open
+val DrawerState.isOpen: Boolean get() = this.targetValue == DrawerValue.Open
