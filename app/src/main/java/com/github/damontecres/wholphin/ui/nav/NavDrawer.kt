@@ -3,7 +3,6 @@ package com.github.damontecres.wholphin.ui.nav
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -333,11 +332,10 @@ fun NavDrawer(
         }
     }
 
-    val closedDrawerWidth = 40.dp
-    val drawerWidth by animateDpAsState(if (drawerState.isOpen) 260.dp else closedDrawerWidth)
-    val drawerPadding by animateDpAsState(if (drawerState.isOpen) 0.dp else 8.dp)
+    val drawerWidth = 260.dp
+    val drawerPadding = 0.dp
     val drawerBackground by animateColorAsState(
-        if (drawerState.isOpen) {
+        if (drawerState.currentValue == DrawerValue.Open) {
             MaterialTheme.colorScheme.surface
         } else {
             Color.Transparent
@@ -391,7 +389,7 @@ fun NavDrawer(
                         subtext = server?.name ?: server?.url,
                         icon = Icons.Default.AccountCircle,
                         selected = false,
-                        drawerOpen = drawerState.isOpen,
+                        drawerOpen = drawerState.currentValue == DrawerValue.Open,
                         interactionSource = interactionSource,
                         onClick = {
                             viewModel.setupNavigationManager.navigateTo(
@@ -432,7 +430,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.search),
                                 icon = Icons.Default.Search,
                                 selected = selectedIndex == -2,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerState.currentValue == DrawerValue.Open,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-2)
@@ -455,7 +453,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.home),
                                 icon = Icons.Default.Home,
                                 selected = selectedIndex == -1,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerState.currentValue == DrawerValue.Open,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-1)
@@ -481,7 +479,7 @@ fun NavDrawer(
                                 library = it,
                                 selected = selectedIndex == index,
                                 moreExpanded = showMore,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerState.currentValue == DrawerValue.Open,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     onClick.invoke(index, it)
@@ -507,10 +505,10 @@ fun NavDrawer(
                                     library = it,
                                     selected = selectedIndex == adjustedIndex,
                                     moreExpanded = showMore,
-                                    drawerOpen = drawerState.isOpen,
+                                    drawerOpen = drawerState.currentValue == DrawerValue.Open,
                                     onClick = { onClick.invoke(adjustedIndex, it) },
                                     containerColor =
-                                        if (drawerState.isOpen) {
+                                        if (drawerState.currentValue == DrawerValue.Open) {
                                             MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
                                         } else {
                                             Color.Unspecified
@@ -533,7 +531,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.settings),
                                 icon = Icons.Default.Settings,
                                 selected = false,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerState.currentValue == DrawerValue.Open,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.navigationManager.navigateTo(
@@ -553,7 +551,7 @@ fun NavDrawer(
         Box(
             modifier =
                 Modifier
-                    .padding(start = closedDrawerWidth)
+                    .padding(start = 40.dp)
                     .fillMaxSize(),
         ) {
             // Drawer content
@@ -758,5 +756,3 @@ fun navItemColor(
         }.copy(alpha = alpha)
     }
 }
-
-val DrawerState.isOpen: Boolean get() = this.targetValue == DrawerValue.Open
