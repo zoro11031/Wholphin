@@ -3,7 +3,9 @@ package com.github.damontecres.wholphin.ui.nav
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.focusGroup
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,7 +34,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -98,7 +100,6 @@ import com.github.damontecres.wholphin.ui.tryRequestFocus
 import com.github.damontecres.wholphin.util.ExceptionHandler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -255,7 +256,6 @@ fun NavDrawer(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     val focusRequester = remember { FocusRequester() }
     val searchFocusRequester = remember { FocusRequester() }
@@ -274,9 +274,10 @@ fun NavDrawer(
     // A negative index is a built in page, >=0 is a library
     val selectedIndex by viewModel.selectedIndex.observeAsState(-1)
     var focusedIndex by remember { mutableIntStateOf(Int.MIN_VALUE) }
-    val derivedFocusedIndex by remember { derivedStateOf { focusedIndex } }
 
     val shouldExpand = drawerState.currentValue == DrawerValue.Open
+    val transitionState = remember { MutableTransitionState(false) }
+    transitionState.targetState = shouldExpand
 
     fun setShowMore(value: Boolean) {
         viewModel.setShowMore(value)
@@ -312,37 +313,11 @@ fun NavDrawer(
             }
         }
     }
-    // Temporarily disabled, see https://github.com/damontecres/Wholphin/pull/127#issuecomment-3478058418
-    if (false && preferences.appPreferences.interfacePreferences.navDrawerSwitchOnFocus) {
-        LaunchedEffect(derivedFocusedIndex) {
-            val index = derivedFocusedIndex
-            delay(600)
-            if (index != selectedIndex) {
-                if (index == -1) {
-                    viewModel.setIndex(-1)
-                    viewModel.navigationManager.goToHome()
-                } else if (index in libraries.indices) {
-                    if (moreLibraries.isEmpty() || index != libraries.lastIndex) {
-                        libraries.getOrNull(index)?.let {
-                            onClick.invoke(index, it)
-                        }
-                    }
-                } else {
-                    val newIndex = libraries.size - index + 1
-                    if (newIndex in moreLibraries.indices) {
-                        moreLibraries.getOrNull(newIndex)?.let {
-                            onClick.invoke(index, it)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     val closedDrawerWidth = 40.dp
     val openDrawerWidth = 260.dp
     val surfaceColor = MaterialTheme.colorScheme.surface
-    val transition = updateTransition(targetState = shouldExpand, label = "drawer")
+    val transition = updateTransition(transitionState = transitionState, label = "drawer")
     val drawerWidth by transition.animateDp(
         transitionSpec = { tween(durationMillis = 250) },
         label = "drawerWidth",
@@ -355,8 +330,20 @@ fun NavDrawer(
         transitionSpec = { tween(durationMillis = 250) },
         label = "drawerBackground",
     ) { expanded -> if (expanded) surfaceColor else Color.Transparent }
-    val drawerOpen = drawerWidth > closedDrawerWidth
-    val drawerPadding = if (drawerOpen) 0.dp else 8.dp
+    val drawerPadding by transition.animateDp(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "drawerPadding",
+    ) { expanded -> if (expanded) 0.dp else 8.dp }
+    val iconAlpha by transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "iconAlpha",
+    ) { expanded -> if (expanded) 0.85f else 0.2f }
+    val moreContainerColor by transition.animateColor(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "moreContainerColor",
+    ) { expanded ->
+        if (expanded) MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp) else Color.Transparent
+    }
     val spacedBy = 4.dp
     val config = LocalConfiguration.current
     val density = LocalDensity.current
@@ -405,14 +392,14 @@ fun NavDrawer(
                         subtext = server?.name ?: server?.url,
                         icon = Icons.Default.AccountCircle,
                         selected = false,
-                        drawerOpen = drawerOpen,
+                        iconAlpha = iconAlpha,
                         interactionSource = interactionSource,
                         onClick = {
                             viewModel.setupNavigationManager.navigateTo(
                                 SetupDestination.UserList(server),
                             )
                         },
-                        modifier = Modifier.padding(start = drawerPadding),
+                        modifier = Modifier.offset { IntOffset(drawerPadding.roundToPx(), 0) },
                     )
                     LazyColumn(
                         state = listState,
@@ -436,7 +423,7 @@ fun NavDrawer(
                                         }
                                     }
                                 }.fillMaxHeight()
-                                .padding(start = drawerPadding),
+                                .offset { IntOffset(drawerPadding.roundToPx(), 0) },
                     ) {
                         item {
                             val interactionSource = remember { MutableInteractionSource() }
@@ -446,7 +433,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.search),
                                 icon = Icons.Default.Search,
                                 selected = selectedIndex == -2,
-                                drawerOpen = drawerOpen,
+                                iconAlpha = iconAlpha,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-2)
@@ -458,7 +445,7 @@ fun NavDrawer(
                                         .ifElse(
                                             selectedIndex == -2,
                                             Modifier.focusRequester(focusRequester),
-                                        ).animateItem(),
+                                        ),
                             )
                         }
                         item {
@@ -469,7 +456,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.home),
                                 icon = Icons.Default.Home,
                                 selected = selectedIndex == -1,
-                                drawerOpen = drawerOpen,
+                                iconAlpha = iconAlpha,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-1)
@@ -484,7 +471,7 @@ fun NavDrawer(
                                         .ifElse(
                                             selectedIndex == -1,
                                             Modifier.focusRequester(focusRequester),
-                                        ).animateItem(),
+                                        ),
                             )
                         }
                         itemsIndexed(libraries) { index, it ->
@@ -495,7 +482,7 @@ fun NavDrawer(
                                 library = it,
                                 selected = selectedIndex == index,
                                 moreExpanded = showMore,
-                                drawerOpen = drawerOpen,
+                                iconAlpha = iconAlpha,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     onClick.invoke(index, it)
@@ -506,7 +493,7 @@ fun NavDrawer(
                                         .ifElse(
                                             selectedIndex == index,
                                             Modifier.focusRequester(focusRequester),
-                                        ).animateItem(),
+                                        ),
                             )
                         }
                         if (showMore) {
@@ -521,21 +508,16 @@ fun NavDrawer(
                                     library = it,
                                     selected = selectedIndex == adjustedIndex,
                                     moreExpanded = showMore,
-                                    drawerOpen = drawerOpen,
+                                    iconAlpha = iconAlpha,
                                     onClick = { onClick.invoke(adjustedIndex, it) },
-                                    containerColor =
-                                        if (shouldExpand) {
-                                            MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
-                                        } else {
-                                            Color.Unspecified
-                                        },
+                                    containerColor = moreContainerColor,
                                     interactionSource = interactionSource,
                                     modifier =
                                         Modifier
                                             .ifElse(
                                                 selectedIndex == adjustedIndex,
                                                 Modifier.focusRequester(focusRequester),
-                                            ).animateItem(),
+                                            ),
                                 )
                             }
                         }
@@ -547,7 +529,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.settings),
                                 icon = Icons.Default.Settings,
                                 selected = false,
-                                drawerOpen = drawerOpen,
+                                iconAlpha = iconAlpha,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.navigationManager.navigateTo(
@@ -556,7 +538,7 @@ fun NavDrawer(
                                         ),
                                     )
                                 },
-                                modifier = Modifier.animateItem(),
+                                modifier = Modifier,
                             )
                         }
                     }
@@ -592,7 +574,7 @@ fun NavigationDrawerScope.IconNavItem(
     icon: ImageVector,
     onClick: () -> Unit,
     selected: Boolean,
-    drawerOpen: Boolean,
+    iconAlpha: Float,
     modifier: Modifier = Modifier,
     subtext: String? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -603,7 +585,7 @@ fun NavigationDrawerScope.IconNavItem(
         selected = false,
         onClick = onClick,
         leadingContent = {
-            val color = navItemColor(selected, focused, drawerOpen)
+            val color = navItemColor(selected, focused, iconAlpha)
             Icon(
                 icon,
                 contentDescription = null,
@@ -636,7 +618,7 @@ fun NavigationDrawerScope.NavItem(
     onClick: () -> Unit,
     selected: Boolean,
     moreExpanded: Boolean,
-    drawerOpen: Boolean,
+    iconAlpha: Float,
     modifier: Modifier = Modifier,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     containerColor: Color = Color.Unspecified,
@@ -680,7 +662,7 @@ fun NavigationDrawerScope.NavItem(
                 containerColor = containerColor,
             ),
         leadingContent = {
-            val color = navItemColor(selected, focused, drawerOpen)
+            val color = navItemColor(selected, focused, iconAlpha)
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (useFont) {
                     Text(
@@ -723,25 +705,20 @@ fun NavigationDrawerScope.NavItem(
 fun navItemColor(
     selected: Boolean,
     focused: Boolean,
-    drawerOpen: Boolean,
+    iconAlpha: Float,
 ): Color {
     val theme = LocalTheme.current
     if (theme == AppThemeColors.OLED_BLACK) {
+        val drawerOpen = iconAlpha > 0.5f
         return when {
             selected && focused -> Color.Black
             selected && !drawerOpen -> Color.White.copy(alpha = .5f)
-            selected && drawerOpen -> Color.White.copy(alpha = .85f)
+            selected && drawerOpen -> Color.White.copy(alpha = iconAlpha)
             focused -> Color.Black.copy(alpha = .5f)
-            drawerOpen -> Color(0xFF707070)
-            else -> Color(0xFF505050).copy(alpha = .66f)
+            else -> Color(0xFF606060).copy(alpha = iconAlpha.coerceIn(0.4f, 0.85f))
         }
     } else {
-        val alpha =
-            when {
-                drawerOpen -> .85f
-                selected && !drawerOpen -> .5f
-                else -> .2f
-            }
+        val alpha = if (selected && iconAlpha < 0.5f) 0.5f else iconAlpha
         return when {
             selected && focused -> {
                 when (theme) {
@@ -772,5 +749,3 @@ fun navItemColor(
         }.copy(alpha = alpha)
     }
 }
-
-val DrawerState.isOpen: Boolean get() = this.currentValue == DrawerValue.Open

@@ -202,7 +202,7 @@ private fun ThemeExample(theme: AppThemeColors) {
                                 onClick = { },
                                 selected = false,
                                 moreExpanded = false,
-                                drawerOpen = true,
+                                iconAlpha = 0.85f,
                                 modifier = Modifier,
                             )
                             NavItem(
@@ -210,7 +210,7 @@ private fun ThemeExample(theme: AppThemeColors) {
                                 onClick = { },
                                 selected = false,
                                 moreExpanded = false,
-                                drawerOpen = true,
+                                iconAlpha = 0.85f,
                                 modifier = Modifier,
                                 interactionSource = source,
                             )
@@ -226,7 +226,7 @@ private fun ThemeExample(theme: AppThemeColors) {
                                 onClick = { },
                                 selected = true,
                                 moreExpanded = false,
-                                drawerOpen = true,
+                                iconAlpha = 0.85f,
                                 modifier = Modifier,
                             )
                             NavItem(
@@ -234,7 +234,7 @@ private fun ThemeExample(theme: AppThemeColors) {
                                 onClick = { },
                                 selected = true,
                                 moreExpanded = false,
-                                drawerOpen = true,
+                                iconAlpha = 0.85f,
                                 modifier = Modifier,
                                 interactionSource = source,
                             )
