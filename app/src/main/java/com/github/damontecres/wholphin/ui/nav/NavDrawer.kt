@@ -2,8 +2,10 @@ package com.github.damontecres.wholphin.ui.nav
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -13,6 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -272,6 +276,8 @@ fun NavDrawer(
     var focusedIndex by remember { mutableIntStateOf(Int.MIN_VALUE) }
     val derivedFocusedIndex by remember { derivedStateOf { focusedIndex } }
 
+    val shouldExpand = drawerState.currentValue == DrawerValue.Open
+
     fun setShowMore(value: Boolean) {
         viewModel.setShowMore(value)
     }
@@ -334,15 +340,23 @@ fun NavDrawer(
     }
 
     val closedDrawerWidth = 40.dp
-    val drawerWidth by animateDpAsState(if (drawerState.isOpen) 260.dp else closedDrawerWidth)
-    val drawerPadding by animateDpAsState(if (drawerState.isOpen) 0.dp else 8.dp)
-    val drawerBackground by animateColorAsState(
-        if (drawerState.isOpen) {
-            MaterialTheme.colorScheme.surface
-        } else {
-            Color.Transparent
-        },
-    )
+    val openDrawerWidth = 260.dp
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val transition = updateTransition(targetState = shouldExpand, label = "drawer")
+    val drawerWidth by transition.animateDp(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "drawerWidth",
+    ) { expanded -> if (expanded) openDrawerWidth else closedDrawerWidth }
+    val contentOffset by transition.animateDp(
+        transitionSpec = { tween(durationMillis = 250, delayMillis = 50) },
+        label = "contentOffset",
+    ) { expanded -> if (expanded) openDrawerWidth else closedDrawerWidth }
+    val drawerBackground by transition.animateColor(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "drawerBackground",
+    ) { expanded -> if (expanded) surfaceColor else Color.Transparent }
+    val drawerOpen = drawerWidth > closedDrawerWidth
+    val drawerPadding = if (drawerOpen) 0.dp else 8.dp
     val spacedBy = 4.dp
     val config = LocalConfiguration.current
     val density = LocalDensity.current
@@ -391,7 +405,7 @@ fun NavDrawer(
                         subtext = server?.name ?: server?.url,
                         icon = Icons.Default.AccountCircle,
                         selected = false,
-                        drawerOpen = drawerState.isOpen,
+                        drawerOpen = drawerOpen,
                         interactionSource = interactionSource,
                         onClick = {
                             viewModel.setupNavigationManager.navigateTo(
@@ -432,7 +446,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.search),
                                 icon = Icons.Default.Search,
                                 selected = selectedIndex == -2,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerOpen,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-2)
@@ -455,7 +469,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.home),
                                 icon = Icons.Default.Home,
                                 selected = selectedIndex == -1,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerOpen,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.setIndex(-1)
@@ -481,7 +495,7 @@ fun NavDrawer(
                                 library = it,
                                 selected = selectedIndex == index,
                                 moreExpanded = showMore,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerOpen,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     onClick.invoke(index, it)
@@ -507,10 +521,10 @@ fun NavDrawer(
                                     library = it,
                                     selected = selectedIndex == adjustedIndex,
                                     moreExpanded = showMore,
-                                    drawerOpen = drawerState.isOpen,
+                                    drawerOpen = drawerOpen,
                                     onClick = { onClick.invoke(adjustedIndex, it) },
                                     containerColor =
-                                        if (drawerState.isOpen) {
+                                        if (shouldExpand) {
                                             MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
                                         } else {
                                             Color.Unspecified
@@ -533,7 +547,7 @@ fun NavDrawer(
                                 text = stringResource(R.string.settings),
                                 icon = Icons.Default.Settings,
                                 selected = false,
-                                drawerOpen = drawerState.isOpen,
+                                drawerOpen = drawerOpen,
                                 interactionSource = interactionSource,
                                 onClick = {
                                     viewModel.navigationManager.navigateTo(
@@ -550,13 +564,13 @@ fun NavDrawer(
             }
         },
     ) {
+        val contentOffsetPx = with(density) { contentOffset.toPx() }
         Box(
             modifier =
                 Modifier
-                    .padding(start = closedDrawerWidth)
-                    .fillMaxSize(),
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = contentOffsetPx },
         ) {
-            // Drawer content
             DestinationContent(
                 destination = destination,
                 preferences = preferences,
