@@ -1034,15 +1034,6 @@ val advancedPreferences =
         )
         add(
             PreferenceGroup(
-                title = R.string.search,
-                preferences =
-                    listOf(
-                        AppPreference.CombinedSearchResults,
-                    ),
-            ),
-        )
-        add(
-            PreferenceGroup(
                 title = R.string.playback,
                 preferences =
                     listOf(

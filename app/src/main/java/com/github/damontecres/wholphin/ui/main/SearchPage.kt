@@ -1,6 +1,8 @@
 package com.github.damontecres.wholphin.ui.main
 
 import androidx.activity.compose.BackHandler
+import android.view.Gravity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,8 +11,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,11 +38,16 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -46,6 +55,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.tv.material3.surfaceColorAtElevation
 import com.github.damontecres.wholphin.R
 import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.data.model.DiscoverItem
@@ -55,14 +65,22 @@ import com.github.damontecres.wholphin.services.NavigationManager
 import com.github.damontecres.wholphin.services.SeerrService
 import com.github.damontecres.wholphin.ui.Cards
 import com.github.damontecres.wholphin.ui.SlimItemFields
+import androidx.datastore.core.DataStore
+import com.github.damontecres.wholphin.preferences.AppPreferences
+import com.github.damontecres.wholphin.preferences.updateInterfacePreferences
 import com.github.damontecres.wholphin.ui.cards.DiscoverItemCard
 import com.github.damontecres.wholphin.ui.cards.EpisodeCard
+import com.github.damontecres.wholphin.ui.cards.GridCard
 import com.github.damontecres.wholphin.ui.cards.ItemRow
 import com.github.damontecres.wholphin.ui.cards.SeasonCard
 import com.github.damontecres.wholphin.ui.components.SearchEditTextBox
+import com.github.damontecres.wholphin.ui.components.SwitchWithLabel
 import com.github.damontecres.wholphin.ui.components.TabRow
 import com.github.damontecres.wholphin.ui.components.VoiceInputManager
 import com.github.damontecres.wholphin.ui.components.VoiceSearchButton
+import com.github.damontecres.wholphin.ui.detail.CardGrid
+import androidx.tv.material3.Button
+import androidx.compose.ui.layout.ContentScale
 import com.github.damontecres.wholphin.ui.data.RowColumn
 import com.github.damontecres.wholphin.ui.isNotNullOrBlank
 import com.github.damontecres.wholphin.ui.launchIO
@@ -96,6 +114,7 @@ class SearchViewModel
         val navigationManager: NavigationManager,
         private val seerrService: SeerrService,
         val voiceInputManager: VoiceInputManager,
+        private val appPreferences: DataStore<AppPreferences>,
     ) : ViewModel() {
         val voiceState = voiceInputManager.state
         val soundLevel = voiceInputManager.soundLevel
@@ -111,6 +130,16 @@ class SearchViewModel
 
         private var currentQuery: String? = null
         private var combinedMode: Boolean = false
+
+        fun saveCombinedMode(enabled: Boolean) {
+            viewModelScope.launch(Dispatchers.IO) {
+                appPreferences.updateData { prefs ->
+                    prefs.updateInterfacePreferences {
+                        combinedSearchResults = enabled
+                    }
+                }
+            }
+        }
 
         fun search(
             query: String?,
@@ -161,11 +190,15 @@ class SearchViewModel
                             fields = SlimItemFields,
                             limit = 25,
                         )
-                    val pager =
-                        ApiRequestPager(api, request, GetItemsRequestHandler, viewModelScope)
-                    pager.init()
+                    val result = api.itemsApi.getItems(request).content
+                    val items =
+                        (result.items ?: emptyList()).map {
+                            BaseItem.from(it, api, false)
+                        }
+                    val sorted = items.sortedWith(compareBy { SearchRelevance.score(it, query) })
+
                     withContext(Dispatchers.Main) {
-                        target.value = SearchResult.Success(pager)
+                        target.value = SearchResult.Success(sorted)
                     }
                 } catch (ex: Exception) {
                     Timber.e(ex, "Exception searching for $type")
@@ -187,6 +220,8 @@ class SearchViewModel
                                 listOf(
                                     BaseItemKind.MOVIE,
                                     BaseItemKind.SERIES,
+                                    BaseItemKind.EPISODE,
+                                    BaseItemKind.BOX_SET,
                                 ),
                             fields = SlimItemFields,
                             limit = 50,
@@ -281,6 +316,7 @@ fun SearchPage(
     val seerrResults by viewModel.seerrResults.observeAsState(SearchResult.NoQuery)
     val combinedResults by viewModel.combinedResults.observeAsState(SearchResult.NoQuery)
     val combinedMode = userPreferences.appPreferences.interfacePreferences.combinedSearchResults
+    var showViewOptions by rememberSaveable { mutableStateOf(false) }
 
 //    val query = rememberTextFieldState()
     var query by rememberSaveable { mutableStateOf("") }
@@ -446,7 +482,22 @@ fun SearchPage(
                                     }
                                 },
                     )
+
+                    Button(
+                        onClick = { showViewOptions = true },
+                    ) {
+                        Text(text = stringResource(R.string.view_options))
+                    }
                 }
+            }
+        }
+        if (showViewOptions) {
+            item {
+                SearchViewOptionsDialog(
+                    combinedMode = combinedMode,
+                    onDismissRequest = { showViewOptions = false },
+                    onCombinedModeChange = { viewModel.saveCombinedMode(it) },
+                )
             }
         }
         if (seerrActive && query.isNotBlank()) {
@@ -466,16 +517,14 @@ fun SearchPage(
         }
         if (selectedTab == 0 || !seerrActive || query.isBlank()) {
             if (combinedMode) {
-                searchResultRow(
-                    title = context.getString(R.string.results),
-                    result = combinedResults,
-                    rowIndex = COMBINED_ROW,
-                    position = position,
-                    focusRequester = focusRequesters[COMBINED_ROW],
-                    onClickItem = onClickItem,
-                    onClickPosition = { position = it },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                item {
+                    CombinedResultsGrid(
+                        result = combinedResults,
+                        focusRequester = focusRequesters[COMBINED_ROW],
+                        onClickItem = onClickItem,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             } else {
                 searchResultRow(
                     title = context.getString(R.string.movies),
@@ -673,5 +722,124 @@ fun SearchResultPlaceholder(
             style = MaterialTheme.typography.titleMedium,
             color = messageColor,
         )
+    }
+}
+
+@Composable
+fun CombinedResultsGrid(
+    result: SearchResult,
+    focusRequester: FocusRequester,
+    onClickItem: (Int, BaseItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (val r = result) {
+        is SearchResult.Error -> {
+            SearchResultPlaceholder(
+                title = stringResource(R.string.results),
+                message = r.ex.localizedMessage ?: "Error occurred during search",
+                messageColor = MaterialTheme.colorScheme.error,
+                modifier = modifier,
+            )
+        }
+
+        SearchResult.NoQuery -> {
+            // no-op
+        }
+
+        SearchResult.Searching -> {
+            SearchResultPlaceholder(
+                title = stringResource(R.string.results),
+                message = stringResource(R.string.searching),
+                modifier = modifier,
+            )
+        }
+
+        is SearchResult.Success -> {
+            if (r.items.isNotEmpty()) {
+                CardGrid(
+                    pager = r.items,
+                    onClickItem = onClickItem,
+                    onLongClickItem = { _, _ -> },
+                    onClickPlay = { _, _ -> },
+                    letterPosition = { letter ->
+                        r.items.indexOfFirst {
+                            it?.sortName?.firstOrNull()?.uppercaseChar() == letter
+                        }
+                    },
+                    gridFocusRequester = focusRequester,
+                    showJumpButtons = true,
+                    showLetterButtons = true,
+                    modifier = modifier,
+                    columns = 6,
+                    cardContent = { item, onClick, onLongClick, mod ->
+                        GridCard(
+                            item = item as BaseItem?,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                            imageContentScale = ContentScale.FillBounds,
+                            modifier = mod,
+                        )
+                    },
+                )
+            }
+        }
+
+        else -> {}
+    }
+}
+
+@Composable
+fun SearchViewOptionsDialog(
+    combinedMode: Boolean,
+    onDismissRequest: () -> Unit,
+    onCombinedModeChange: (Boolean) -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.tryRequestFocus() }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+        dialogWindowProvider?.window?.let { window ->
+            window.setGravity(Gravity.END)
+            window.setDimAmount(0f)
+        }
+
+        Column(
+            modifier = Modifier
+                .width(256.dp)
+                .padding(16.dp)
+                .background(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp),
+                    shape = RoundedCornerShape(8.dp)
+                ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.view_options),
+                style = MaterialTheme.typography.titleMedium,
+            )
+
+            SwitchWithLabel(
+                label = stringResource(R.string.combined_search_results),
+                checked = combinedMode,
+                onStateChange = onCombinedModeChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+            )
+
+            Text(
+                text = if (combinedMode) {
+                    stringResource(R.string.combined_search_results_on)
+                } else {
+                    stringResource(R.string.combined_search_results_off)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
